@@ -1,4 +1,5 @@
 #include "AddonBridge.h"
+#include "CameraApiLite.h"
 #include "NameplateApi.h"
 
 #include "Log.h"
@@ -547,6 +548,7 @@ namespace {
 
     void __cdecl CVarInitializeHook() {
         OriginalCVarInitialize();
+        RegisterCameraApiCVars("CVarInitialize");
         RegisterAddonBridgeCVars("CVarInitialize");
         if (RegisterNameplateCVars("CVarInitialize")) {
             PollNameplateCVars(true);
@@ -601,6 +603,7 @@ namespace {
     int __cdecl UpdateNamePlatePositionsHook(void* worldFrame) {
         InterlockedIncrement(const_cast<LONG*>(&NameplateUpdateCount));
         PollNameplateCVars();
+        PollCameraApi();
         PollAddonBridge();
         int result = OriginalUpdateNamePlatePositions(worldFrame);
         LogStackingCalculationIfNeeded();

@@ -3,6 +3,8 @@ project(AwesomeMacroLite)
 add_library(${PROJECT_NAME} SHARED
     "AddonBridge.cpp"
     "AddonBridge.h"
+    "CameraApiLite.cpp"
+    "CameraApiLite.h"
     "Entry.cpp"
     "Log.cpp"
     "MacroParser.cpp"
