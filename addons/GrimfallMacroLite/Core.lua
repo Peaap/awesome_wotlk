@@ -31,6 +31,13 @@ local categories = {
     { key = "about", label = "About" },
 }
 
+local function ensureDatabase()
+    if not Addon.db then
+        Addon.db = LibStub("AceDB-3.0"):New("GrimfallMacroLiteDB", defaults, true)
+    end
+    return Addon.db
+end
+
 local function boolToCVar(value)
     return value and "1" or "0"
 end
@@ -48,6 +55,7 @@ local function setBackendCVar(name, value)
 end
 
 local function applyBackendSettings()
+    ensureDatabase()
     local profile = Addon.db.profile
     local applied = 0
 
@@ -65,6 +73,7 @@ local function applyBackendSettings()
 end
 
 local function copyProfileToDraft()
+    ensureDatabase()
     Addon.draft = {
         addonBridge = Addon.db.profile.addonBridge and true or false,
         addonBridgeTrace = Addon.db.profile.addonBridgeTrace and true or false,
@@ -405,7 +414,7 @@ function Addon:OpenWindow()
 end
 
 function Addon:OnInitialize()
-    self.db = LibStub("AceDB-3.0"):New("GrimfallMacroLiteDB", defaults, true)
+    ensureDatabase()
     copyProfileToDraft()
 
     self:RegisterChatCommand("gml", "SlashCommand")
