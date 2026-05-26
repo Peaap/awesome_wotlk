@@ -23,14 +23,16 @@ tandem loader after Grimfall WoW's `ClientExtensions.DLL` is present.
 - is built from `src/AwesomeMacroLite/Entry.cpp`
 - imports only `KERNEL32.dll`
 - uses one manual x86 trampoline at `SecureCmdOptionParse`
+- uses one manual x86 trampoline at `CGWorldFrame::OnLayerTrackTerrain`
 - verifies the expected hook bytes before patching memory
-- logs startup, hook install, rewrite events, and hook-byte mismatches
+- clears armed macro-target flags after a short timeout or successful terrain click
+- logs startup, hook install, rewrite/click events, timeout cleanup, and hook-byte mismatches
 - does not include Detours, renderer hooks, camera hooks, voice hooks,
   nameplate hooks, or the addon bridge
 
-The hook is intentionally small: it lets `cursor` and `playerlocation` survive
-`SecureCmdOptionParse` without enabling the rest of the full Awesome hook
-surface.
+The hook surface is intentionally small: it lets `cursor` and `playerlocation`
+survive `SecureCmdOptionParse`, then submits the terrain position needed by
+ground-target spells without enabling the rest of the full Awesome feature set.
 
 ## Local Verification
 
@@ -50,7 +52,7 @@ Run with:
 
 This Grimfall WoW build keeps the stable feature set narrow.
 
-- enabled: macro conditional parser rewrite for `cursor` and `playerlocation`
+- enabled: macro conditional ground-target casts for `cursor` and `playerlocation`
 - disabled: full Awesome modules until each one is isolated and reverified
 
 That avoids known conflicts with Grimfall WoW's existing runtime hooks through

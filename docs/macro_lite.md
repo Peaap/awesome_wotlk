@@ -11,17 +11,29 @@ the hook surface.
 
 ## What It Does
 
-MacroLite installs one manual x86 trampoline at:
+MacroLite installs two manual x86 trampolines:
 
 ```text
 SecureCmdOptionParse = 0x00564AE0
 expected bytes       = 55 8B EC 83 EC 10
 patch size           = 6
+
+OnLayerTrackTerrain  = 0x004F66C0
+expected bytes       = 55 8B EC 81 EC A4 00 00 00
+patch size           = 9
 ```
 
 After the original parser runs, it checks the Lua return stack. When the parsed
 target is `cursor` or `playerlocation`, it rewrites the return values so the
 client accepts the target conditional instead of rejecting it.
+
+The terrain hook then submits the ground-target position:
+
+- `cursor` uses the terrain position from the active targeting event.
+- `playerlocation` reads the current player position and submits that.
+
+Armed macro-target flags are cleared after a successful terrain click or after
+a short timeout, so a canceled/failed cast cannot leave a stale target active.
 
 ## What It Avoids
 
@@ -72,7 +84,10 @@ DllMain DLL_PROCESS_ATTACH
 InitThread begin
 InitThread after sleep
 SecureCmdOptionParse manual hook installed ...
+OnLayerTrackTerrain manual hook installed ...
 SecureCmdOptionParseHook rewriting target ...
+OnLayerTrackTerrainHook cursor click ...
+Macro target flags cleared reason=cursor-click ...
 ```
 
 The rewrite log is rate-limited so normal gameplay does not produce a large

@@ -34,7 +34,7 @@ call "%VCVARSALL%" x86
 if errorlevel 1 exit /b %ERRORLEVEL%
 
 if not exist "%BUILD_DIR%\CMakeCache.txt" (
-  "%CMAKE_EXE%" -S "%REPO_DIR%" -B "%BUILD_DIR%" -G "Visual Studio 18 2026" -A Win32
+  "%CMAKE_EXE%" -S "%REPO_DIR%." -B "%BUILD_DIR%" -G "Visual Studio 18 2026" -A Win32
   if errorlevel 1 exit /b %ERRORLEVEL%
 )
 

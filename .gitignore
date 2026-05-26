@@ -1,3 +1,7 @@
 build
+build-*
 .vs
 out
+*.bak
+*.dmp
+deps/unordered_dense/
