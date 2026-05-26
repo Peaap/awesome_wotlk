@@ -6,8 +6,6 @@ This fork is intended to be reviewable by server owners and players before use.
 
 - `AwesomeMacroLite.dll`, built from this repository for the current Grimfall
   WoW compatibility path
-- `AwesomeWotlkLib.dll`, kept available for upstream feature work after module
-  compatibility is reverified
 - addon folders under `Interface/AddOns`
 - `GrimfallMacroLite`, an Ace3-based settings addon for MacroLite controls
 - source-visible build and install scripts

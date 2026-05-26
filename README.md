@@ -1,7 +1,8 @@
 # Awesome WotLK - Peaap Fork
 
-This fork keeps the upstream Awesome WotLK code available, but the currently
-recommended Grimfall WoW path is the small `AwesomeMacroLite.dll` target.
+This fork is focused on Grimfall WoW. Legacy upstream Awesome WotLK modules are
+kept out of the tracked tree unless they are reworked into the Grimfall-specific
+MacroLite path.
 
 `AwesomeMacroLite.dll` implements the Grimfall-tested feature path. It patches
 the secure macro parser and terrain-submit path for ground-target spells,

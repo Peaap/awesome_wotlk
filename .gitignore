@@ -5,3 +5,7 @@ out
 *.bak
 *.dmp
 deps/unordered_dense/
+addons/AwesomeCVar/
+addons/Flash/
+src/AwesomeWotlkLib/
+src/AwesomeWotlkPatch/
