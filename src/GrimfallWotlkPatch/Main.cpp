@@ -2,6 +2,7 @@
 #include "Utils.h"
 
 #include <Windows.h>
+#include <CommDlg.h>
 #include <filesystem>
 #include <sstream>
 #include <string>
@@ -11,14 +12,53 @@ namespace {
     std::string s_appName;
     bool s_quietMode = false;
 
-    const char* findGameClientExecutable() {
+    std::string findGameClientExecutable(const char* appPath) {
         static const char* possibleNames[] = { "Wow.exe", "Project-Epoch.exe" };
+        std::vector<std::filesystem::path> searchRoots = {
+            std::filesystem::absolute(appPath).parent_path(),
+            std::filesystem::current_path()
+        };
+
+        for (const auto& root : searchRoots) {
+            for (const char* name : possibleNames) {
+                std::filesystem::path candidate = root / name;
+                if (std::filesystem::is_regular_file(candidate)) {
+                    return candidate.string();
+                }
+            }
+        }
+
         for (const char* name : possibleNames) {
             if (std::filesystem::is_regular_file(name)) {
                 return name;
             }
         }
-        return nullptr;
+        return {};
+    }
+
+    std::string browseForGameClientExecutable(const char* appPath) {
+        char selectedPath[MAX_PATH] = {};
+
+        std::filesystem::path initialDir = std::filesystem::absolute(appPath).parent_path();
+        std::string initialDirString = initialDir.string();
+
+        OPENFILENAMEA ofn = {};
+        ofn.lStructSize = sizeof(ofn);
+        ofn.hwndOwner = nullptr;
+        ofn.lpstrFilter =
+            "World of Warcraft executable (Wow.exe)\0Wow.exe\0"
+            "Executable files (*.exe)\0*.exe\0"
+            "All files (*.*)\0*.*\0";
+        ofn.lpstrFile = selectedPath;
+        ofn.nMaxFile = MAX_PATH;
+        ofn.lpstrInitialDir = initialDirString.c_str();
+        ofn.lpstrTitle = "Select Grimfall Wow.exe";
+        ofn.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR;
+
+        if (!GetOpenFileNameA(&ofn)) {
+            return {};
+        }
+        return selectedPath;
     }
 
     void message(DWORD icon, const std::string& text) {
@@ -162,7 +202,8 @@ int main(int argc, char** argv) {
 
     bool statusOnly = false;
     bool unpatch = false;
-    const char* exePath = nullptr;
+    bool browse = false;
+    std::string exePath;
 
     for (int i = 1; i < argc; ++i) {
         if (strcmp(argv[i], "--quiet") == 0 || strcmp(argv[i], "-q") == 0) {
@@ -174,25 +215,32 @@ int main(int argc, char** argv) {
         else if (strcmp(argv[i], "--unpatch") == 0) {
             unpatch = true;
         }
-        else if (!exePath) {
+        else if (strcmp(argv[i], "--browse") == 0) {
+            browse = true;
+        }
+        else if (exePath.empty()) {
             exePath = argv[i];
         }
     }
 
-    if (!exePath) {
-        exePath = findGameClientExecutable();
+    if (exePath.empty() && !browse) {
+        exePath = findGameClientExecutable(argv[0]);
     }
-    if (!exePath) {
+    if (exePath.empty() && !s_quietMode) {
+        exePath = browseForGameClientExecutable(argv[0]);
+    }
+    if (exePath.empty()) {
         message(MB_ICONERROR,
             "World of Warcraft executable not found.\n\n"
-            "Move this patcher next to Wow.exe, drag Wow.exe onto it, or run:\n"
+            "Move this patcher next to Wow.exe and run it again, or select Wow.exe in the file picker.\n\n"
+            "Advanced use:\n"
             + s_appName + " C:\\Path\\To\\Grimfall-WoW\\Wow.exe");
         return 1;
     }
 
     std::vector<char> image;
-    if (!readFile(exePath, image)) {
-        message(MB_ICONERROR, "Failed to read " + std::string(exePath));
+    if (!readFile(exePath.c_str(), image)) {
+        message(MB_ICONERROR, "Failed to read " + exePath);
         return 1;
     }
 
@@ -202,19 +250,19 @@ int main(int argc, char** argv) {
             status == PatchStatus::Patched ? "patched" :
             status == PatchStatus::Original ? "unpatched" :
             "mixed or unknown";
-        message(MB_ICONINFORMATION, std::string(exePath) + "\n\nStatus: " + statusText);
+        message(MB_ICONINFORMATION, exePath + "\n\nStatus: " + statusText);
         return status == PatchStatus::MixedOrUnknown ? 2 : 0;
     }
 
     if (status == PatchStatus::MixedOrUnknown) {
         message(MB_ICONERROR,
-            std::string(exePath) +
+            exePath +
             "\n\nUnexpected patch bytes found. Refusing to modify this executable.");
         return 1;
     }
 
     std::string error;
-    if (!applyPatches(exePath, unpatch, error)) {
+    if (!applyPatches(exePath.c_str(), unpatch, error)) {
         DWORD lastError = GetLastError();
         message(MB_ICONERROR,
             "Failed to " + std::string(unpatch ? "remove" : "apply") +
@@ -225,19 +273,19 @@ int main(int argc, char** argv) {
     }
 
     if (unpatch) {
-        message(MB_ICONINFORMATION, "Grimfall MacroLite patch removed from:\n" + std::string(exePath));
+        message(MB_ICONINFORMATION, "Grimfall MacroLite patch removed from:\n" + exePath);
         return 0;
     }
 
-    bool copied = copyMacroLiteNextToWow(exePath, argv[0]);
+    bool copied = copyMacroLiteNextToWow(exePath.c_str(), argv[0]);
     if (copied) {
         message(MB_ICONINFORMATION,
-            "Grimfall MacroLite patch applied to:\n" + std::string(exePath) +
+            "Grimfall MacroLite patch applied to:\n" + exePath +
             "\n\nYou can now run Wow.exe directly.");
     }
     else {
         message(MB_ICONWARNING,
-            "Grimfall MacroLite patch applied to:\n" + std::string(exePath) +
+            "Grimfall MacroLite patch applied to:\n" + exePath +
             "\n\nPlace " + kMacroLiteDllName + " next to Wow.exe before launching.");
     }
     return 0;

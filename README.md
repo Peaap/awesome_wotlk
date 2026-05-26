@@ -27,11 +27,14 @@ For direct `Wow.exe` launches, build and run the Grimfall patcher:
 
 ```bat
 build_grimfall_patch_x86.bat
-build\Release\GrimfallWotlkPatch.exe C:\Games\Grimfall-WoW\Wow.exe
+build\Release\GrimfallWotlkPatch.exe
 ```
 
-After patching, `Wow.exe` loads `AwesomeMacroLite.dll` directly. MacroLite still
-waits for Grimfall's `ClientExtensions.DLL` before installing hooks.
+Put `GrimfallWotlkPatch.exe` beside `Wow.exe` and run it. If the patcher cannot
+find `Wow.exe` automatically, it opens a file picker. It still accepts an
+explicit path for advanced use. After patching, `Wow.exe` loads
+`AwesomeMacroLite.dll` directly. MacroLite still waits for Grimfall's
+`ClientExtensions.DLL` before installing hooks.
 
 ## Trust Model
 

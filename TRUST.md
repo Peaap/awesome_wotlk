@@ -14,8 +14,9 @@ This fork is intended to be reviewable by server owners and players before use.
 - `SHA256SUMS.txt` for release-file verification
 
 The release package does not need a closed or packed patch executable. The
-Grimfall patcher is source-visible, verifies expected bytes before writing, and
-creates a `Wow.exe.grimfall-awesome.bak` backup before applying the patch.
+Grimfall patcher is source-visible, finds `Wow.exe` beside itself or through a
+file picker, verifies expected bytes before writing, and creates a
+`Wow.exe.grimfall-awesome.bak` backup before applying the patch.
 MacroLite still waits for Grimfall WoW's `ClientExtensions.DLL` before
 installing hooks.
 
@@ -46,7 +47,7 @@ The `ntdll.dll` import comes from the SlimDetours-backed spell hook.
 ```powershell
 .\build_install_macro_lite_x86.bat C:\Path\To\Grimfall-WoW
 .\build_grimfall_patch_x86.bat
-.\build\Release\GrimfallWotlkPatch.exe C:\Path\To\Grimfall-WoW\Wow.exe
+.\build\Release\GrimfallWotlkPatch.exe
 dumpbin /dependents %WOW_ROOT%\AwesomeMacroLite.dll
 Get-FileHash -Algorithm SHA256 %WOW_ROOT%\AwesomeMacroLite.dll
 ```
@@ -54,6 +55,8 @@ Get-FileHash -Algorithm SHA256 %WOW_ROOT%\AwesomeMacroLite.dll
 Patcher utilities:
 
 ```text
+GrimfallWotlkPatch.exe
+GrimfallWotlkPatch.exe --browse
 GrimfallWotlkPatch.exe --status C:\Path\To\Grimfall-WoW\Wow.exe
 GrimfallWotlkPatch.exe --unpatch C:\Path\To\Grimfall-WoW\Wow.exe
 ```
