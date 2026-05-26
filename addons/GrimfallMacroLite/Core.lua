@@ -40,6 +40,40 @@ local nameplateCVarDefs = {
     { key = "grimfallNameplateHysteresisDecay", label = "Hysteresis Decay", min = 0.25, max = 30, step = 0.25, default = 1 },
 }
 
+local cameraCVarDefs = {
+    { key = "cameraFov", label = "Field of View", min = 60, max = 150, step = 1, default = 100 },
+    { key = "cameraDistanceMax", label = "Max Camera Distance", min = 0, max = 50, step = 1, default = 15 },
+    { key = "cameraIndirectVisibility", label = "Indirect Visibility", kind = "check", default = 1 },
+    { key = "cameraIndirectAlpha", label = "Indirect Alpha", min = 0.6, max = 1, step = 0.05, default = 0.6 },
+}
+
+local cameraPresets = {
+    Default = {
+        cameraFov = 100,
+        cameraDistanceMax = 15,
+        cameraIndirectVisibility = 1,
+        cameraIndirectAlpha = 0.6,
+    },
+    Wide = {
+        cameraFov = 115,
+        cameraDistanceMax = 35,
+        cameraIndirectVisibility = 1,
+        cameraIndirectAlpha = 0.75,
+    },
+    Raid = {
+        cameraFov = 110,
+        cameraDistanceMax = 50,
+        cameraIndirectVisibility = 1,
+        cameraIndirectAlpha = 0.8,
+    },
+    Cinematic = {
+        cameraFov = 85,
+        cameraDistanceMax = 25,
+        cameraIndirectVisibility = 0,
+        cameraIndirectAlpha = 0.6,
+    },
+}
+
 local Protocol = {
     Version = "0.1.0",
     Prefix = "GML",
@@ -259,6 +293,7 @@ end
 local categories = {
     { key = "general", label = "General" },
     { key = "bridge", label = "Addon Bridge" },
+    { key = "camera", label = "Camera" },
     { key = "nameplates", label = "Nameplates" },
     { key = "macros", label = "Macros" },
     { key = "profiles", label = "Profiles" },
@@ -389,6 +424,52 @@ end
 local function resetNameplateCVars()
     for _, def in ipairs(nameplateCVarDefs) do
         setNameplateCVar(def, def.default)
+    end
+end
+
+local function getCameraCVarNumber(def)
+    local value = tonumber(safeGetCVar(def.key))
+    if value == nil then
+        return def.default
+    end
+    return value
+end
+
+local function getCameraCVarBool(def)
+    local value = safeGetCVar(def.key)
+    if value == nil then
+        return def.default ~= 0
+    end
+    return value == "1" or value == 1 or value == true
+end
+
+local function setCameraCVar(def, value)
+    if def.kind == "check" then
+        value = value and 1 or 0
+    end
+
+    local ok, reason = safeSetCVar(def.key, value)
+    if not ok then
+        Addon:Print("Camera CVar unavailable: " .. def.key .. " (" .. tostring(reason) .. ")")
+    end
+end
+
+local function resetCameraCVars()
+    for _, def in ipairs(cameraCVarDefs) do
+        setCameraCVar(def, def.default)
+    end
+end
+
+local function applyCameraPreset(name)
+    local preset = cameraPresets[name]
+    if not preset then
+        return
+    end
+
+    for _, def in ipairs(cameraCVarDefs) do
+        if preset[def.key] ~= nil then
+            setCameraCVar(def, preset[def.key])
+        end
     end
 end
 
@@ -975,6 +1056,83 @@ function Addon:CreateWindow()
         Addon:Print(ok and "Object exists request queued." or ("Object exists request failed: " .. tostring(reason)))
     end)
 
+    local cameraTitle = createSectionTitle(ui.pages.camera, "Camera Controls", "TOPLEFT", 18, -18)
+    createRule(ui.pages.camera, cameraTitle, -9)
+    local cameraDescription = createDescription(
+        ui.pages.camera,
+        "Camera controls use existing Grimfall client CVars. These do not install additional DLL hooks.",
+        cameraTitle,
+        0,
+        -14,
+        360)
+    cameraDescription:SetHeight(36)
+
+    ui.cameraControls = {}
+    for index, def in ipairs(cameraCVarDefs) do
+        local cvarDef = def
+        local y = -86 - ((index - 1) * 54)
+        local control
+        if cvarDef.kind == "check" then
+            control = createCheck(ui.pages.camera, "Camera" .. index, cvarDef.label, 18, y,
+                function() return getCameraCVarBool(cvarDef) end,
+                function(value) setCameraCVar(cvarDef, value) end)
+        else
+            control = createSlider(ui.pages.camera, "Camera" .. index, cvarDef.label, 18, y, cvarDef.min, cvarDef.max, cvarDef.step,
+                function() return getCameraCVarNumber(cvarDef) end,
+                function(value) setCameraCVar(cvarDef, value) end)
+        end
+        table.insert(ui.cameraControls, control)
+        table.insert(ui.controls, control)
+    end
+
+    local presetTitle = createSectionTitle(ui.pages.camera, "Presets", "TOPLEFT", 18, -316)
+    createRule(ui.pages.camera, presetTitle, -9)
+
+    local defaultCamera = createButton(ui.pages.camera, "Default", 78, 24)
+    defaultCamera:SetPoint("TOPLEFT", 18, -350)
+    skinActionButton(defaultCamera)
+    defaultCamera:SetScript("OnClick", function()
+        applyCameraPreset("Default")
+        Addon:Print("Camera preset applied: Default")
+        refreshControls()
+    end)
+
+    local wideCamera = createButton(ui.pages.camera, "Wide", 78, 24)
+    wideCamera:SetPoint("LEFT", defaultCamera, "RIGHT", 10, 0)
+    skinActionButton(wideCamera)
+    wideCamera:SetScript("OnClick", function()
+        applyCameraPreset("Wide")
+        Addon:Print("Camera preset applied: Wide")
+        refreshControls()
+    end)
+
+    local raidCamera = createButton(ui.pages.camera, "Raid", 78, 24)
+    raidCamera:SetPoint("LEFT", wideCamera, "RIGHT", 10, 0)
+    skinActionButton(raidCamera)
+    raidCamera:SetScript("OnClick", function()
+        applyCameraPreset("Raid")
+        Addon:Print("Camera preset applied: Raid")
+        refreshControls()
+    end)
+
+    local cinematicCamera = createButton(ui.pages.camera, "Cinematic", 92, 24)
+    cinematicCamera:SetPoint("LEFT", raidCamera, "RIGHT", 10, 0)
+    skinActionButton(cinematicCamera)
+    cinematicCamera:SetScript("OnClick", function()
+        applyCameraPreset("Cinematic")
+        Addon:Print("Camera preset applied: Cinematic")
+        refreshControls()
+    end)
+
+    local resetCamera = createButton(ui.pages.camera, "Reset Camera", 104, 24)
+    resetCamera:SetPoint("TOPLEFT", 18, -390)
+    skinActionButton(resetCamera)
+    resetCamera:SetScript("OnClick", function()
+        resetCameraCVars()
+        Addon:Print("Camera CVars reset to defaults.")
+        refreshControls()
+    end)
+
     local nameplatesTitle = createSectionTitle(ui.pages.nameplates, "Nameplate API", "TOPLEFT", 18, -18)
     createRule(ui.pages.nameplates, nameplatesTitle, -9)
     local nameplatesDescription = createDescription(
@@ -1110,6 +1268,9 @@ function Addon:CreateWindow()
         if Addon.activePage == "nameplates" then
             resetNameplateCVars()
             Addon:Print("Nameplate CVars reset to backend defaults.")
+        elseif Addon.activePage == "camera" then
+            resetCameraCVars()
+            Addon:Print("Camera CVars reset to defaults.")
         else
             resetDraft()
         end
