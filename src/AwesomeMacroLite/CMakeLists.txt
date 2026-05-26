@@ -9,6 +9,8 @@ add_library(${PROJECT_NAME} SHARED
     "MacroTargetState.cpp"
     "NameplateApi.cpp"
     "NameplateApi.h"
+    "ObjectTargetApi.cpp"
+    "ObjectTargetApi.h"
     "SlimHook.cpp"
     "SpellStanceFix.cpp"
     "TerrainTargeting.cpp"

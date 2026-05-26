@@ -2,6 +2,7 @@
 #include "Log.h"
 #include "MacroParser.h"
 #include "NameplateApi.h"
+#include "ObjectTargetApi.h"
 #include "SpellStanceFix.h"
 #include "TerrainTargeting.h"
 
@@ -36,6 +37,7 @@ namespace {
         AwesomeMacroLite::InstallTerrainTargetingHook();
         AwesomeMacroLite::InstallSpellStanceFixHook();
         AwesomeMacroLite::InstallNameplateApiHooks();
+        AwesomeMacroLite::RegisterObjectTargetApi();
         AwesomeMacroLite::RegisterAddonBridgeCVars("InitThread");
         return 0;
     }
