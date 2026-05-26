@@ -23,6 +23,10 @@ namespace {
     constexpr uintptr_t kNamePlateDistanceSquared = 0x00ADAA7C;
     constexpr uintptr_t kWorldFrameGlobal = 0x00B7436C;
     constexpr size_t kWorldFrameRenderDirtyFlagsOffset = 0xB10;
+    constexpr size_t kFrameWidthOffset = 0x54;
+    constexpr size_t kFrameHeightOffset = 0x58;
+    constexpr size_t kFrameShownOffset = 0xDC;
+    constexpr size_t kPlateNdcOffset = 0x2E0;
     constexpr DWORD kStatusLogIntervalMs = 5000;
     constexpr int kMaxTrackedNameplates = 1024;
 
@@ -78,6 +82,10 @@ namespace {
     void* CVarNameplateHysteresisDecay = nullptr;
 
     volatile LONG NameplateApiEnabled = 1;
+    volatile LONG NameplateStackingMode = 0;
+    volatile LONG NameplateBandXMilli = 700;
+    volatile LONG NameplateBandYMilli = 1000;
+    volatile LONG NameplateRaiseDistanceMilli = 8000;
     volatile LONG NameplateDistance = 41;
     volatile LONG NameplatePlacementMilli = 0;
     volatile LONG NameplateActiveCount = 0;
@@ -88,6 +96,7 @@ namespace {
     volatile LONG NameplateCVarsRegistered = 0;
     NamePlateRecord NameplateRecords[kMaxTrackedNameplates] = {};
     DWORD LastStatusLogTick = 0;
+    DWORD LastStackingCalcLogTick = 0;
 
     int ClampInt(int value, int minimum, int maximum) {
         if (value < minimum) return minimum;
@@ -116,6 +125,32 @@ namespace {
         const char* value = ReadCVarString(cvar);
         if (!value) return fallback;
         return ClampInt(static_cast<int>((atof(value) * 1000.0) + 0.5), minimum, maximum);
+    }
+
+    bool IsReadable(const void* address, size_t size) {
+        if (!address || !size) return false;
+
+        MEMORY_BASIC_INFORMATION mbi = {};
+        if (!VirtualQuery(address, &mbi, sizeof(mbi))) return false;
+        if (mbi.State != MEM_COMMIT) return false;
+        if (mbi.Protect & (PAGE_NOACCESS | PAGE_GUARD)) return false;
+
+        const uintptr_t start = reinterpret_cast<uintptr_t>(address);
+        const uintptr_t end = start + size;
+        const uintptr_t regionEnd = reinterpret_cast<uintptr_t>(mbi.BaseAddress) + mbi.RegionSize;
+        return end >= start && end <= regionEnd;
+    }
+
+    float ReadFloat(void* base, size_t offset, float fallback) {
+        const auto* address = static_cast<BYTE*>(base) + offset;
+        if (!IsReadable(address, sizeof(float))) return fallback;
+        return *reinterpret_cast<const float*>(address);
+    }
+
+    uint32_t ReadU32(void* base, size_t offset, uint32_t fallback) {
+        const auto* address = static_cast<BYTE*>(base) + offset;
+        if (!IsReadable(address, sizeof(uint32_t))) return fallback;
+        return *reinterpret_cast<const uint32_t*>(address);
     }
 
     void* RegisterNameplateCVar(const char* name, const char* defaultValue) {
@@ -196,16 +231,23 @@ namespace {
         int raiseSpeed = ReadCVarInt(CVarNameplateRaiseSpeed, 100, 1, 250);
         int lowerSpeed = ReadCVarInt(CVarNameplateLowerSpeed, 100, 1, 250);
         int pullDistance = ReadCVarFloatMilli(CVarNameplatePullDistance, 250, 0, 2000);
+        int raiseDistance = ReadCVarFloatMilli(CVarNameplateRaiseDistance, 8000, 1000, 20000);
+        int bandX = ReadCVarFloatMilli(CVarNameplateBandX, 700, 100, 1000);
+        int bandY = ReadCVarFloatMilli(CVarNameplateBandY, 1000, 100, 1500);
         int placement = ReadCVarFloatMilli(CVarNameplatePlacement, 0, -1000, 2000);
 
         LONG oldApi = InterlockedExchange(const_cast<LONG*>(&NameplateApiEnabled), apiEnabled);
+        LONG oldStacking = InterlockedExchange(const_cast<LONG*>(&NameplateStackingMode), stacking);
+        InterlockedExchange(const_cast<LONG*>(&NameplateBandXMilli), bandX);
+        InterlockedExchange(const_cast<LONG*>(&NameplateBandYMilli), bandY);
+        InterlockedExchange(const_cast<LONG*>(&NameplateRaiseDistanceMilli), raiseDistance);
         LONG oldDistance = InterlockedExchange(const_cast<LONG*>(&NameplateDistance), distance);
         LONG oldPlacement = InterlockedExchange(const_cast<LONG*>(&NameplatePlacementMilli), placement);
         if (forceLog || oldApi != apiEnabled || oldDistance != distance) {
             ApplyNameplateDistance(apiEnabled, distance);
         }
 
-        if (forceLog || oldApi != apiEnabled || oldDistance != distance || oldPlacement != placement) {
+        if (forceLog || oldApi != apiEnabled || oldStacking != stacking || oldDistance != distance || oldPlacement != placement) {
             char line[320];
             sprintf_s(line,
                 "NamePlateAPI CVar poll api=%d positioning=%d distance=%d stacking=%d clampTop=%d raiseSpeed=%d lowerSpeed=%d pullMilli=%d placementMilli=%d",
@@ -266,6 +308,93 @@ namespace {
                 return;
             }
         }
+    }
+
+    void LogStackingCalculationIfNeeded() {
+        if (!InterlockedCompareExchange(const_cast<LONG*>(&NameplateApiEnabled), 0, 0)) return;
+
+        int stacking = InterlockedCompareExchange(const_cast<LONG*>(&NameplateStackingMode), 0, 0);
+        if (stacking <= 0) return;
+
+        DWORD now = GetTickCount();
+        if (LastStackingCalcLogTick != 0 && now - LastStackingCalcLogTick < kStatusLogIntervalMs) {
+            return;
+        }
+        LastStackingCalcLogTick = now;
+
+        struct PlateCalc {
+            void* plate;
+            float x;
+            float y;
+            float w;
+            float h;
+            float targetY;
+        };
+
+        PlateCalc plates[kMaxTrackedNameplates] = {};
+        int count = 0;
+        for (int i = 0; i < kMaxTrackedNameplates; ++i) {
+            NamePlateRecord& record = NameplateRecords[i];
+            if (!record.active || !record.plate) continue;
+            if (!IsReadable(record.plate, 0x300)) continue;
+            if (!ReadU32(record.plate, kFrameShownOffset, 0)) continue;
+
+            plates[count].plate = record.plate;
+            plates[count].x = ReadFloat(record.plate, kPlateNdcOffset, 0.0f);
+            plates[count].y = ReadFloat(record.plate, kPlateNdcOffset + sizeof(float), 0.0f);
+            plates[count].w = ReadFloat(record.plate, kFrameWidthOffset, 0.1f);
+            plates[count].h = ReadFloat(record.plate, kFrameHeightOffset, 0.025f);
+            plates[count].targetY = 0.0f;
+            ++count;
+        }
+
+        if (count <= 1) return;
+
+        for (int i = 1; i < count; ++i) {
+            PlateCalc key = plates[i];
+            int j = i - 1;
+            while (j >= 0 && plates[j].y < key.y) {
+                plates[j + 1] = plates[j];
+                --j;
+            }
+            plates[j + 1] = key;
+        }
+
+        float bandX = static_cast<float>(InterlockedCompareExchange(const_cast<LONG*>(&NameplateBandXMilli), 0, 0)) / 1000.0f;
+        float bandY = static_cast<float>(InterlockedCompareExchange(const_cast<LONG*>(&NameplateBandYMilli), 0, 0)) / 1000.0f;
+        float raiseDistance = static_cast<float>(InterlockedCompareExchange(const_cast<LONG*>(&NameplateRaiseDistanceMilli), 0, 0)) / 1000.0f;
+        int overlaps = 0;
+        float maxOffset = 0.0f;
+
+        for (int i = 0; i < count; ++i) {
+            float maxRaise = plates[i].h * raiseDistance;
+            for (int j = 0; j < i; ++j) {
+                float minX = ((plates[i].w + plates[j].w) * 0.5f) * bandX;
+                float dx = plates[i].x - plates[j].x;
+                if (dx < 0.0f) dx = -dx;
+                if (dx > minX) continue;
+
+                float minY = ((plates[i].h + plates[j].h) * 0.5f) * bandY;
+                float requiredY = plates[j].y + plates[j].targetY + minY - plates[i].y;
+                if (requiredY > plates[i].targetY) {
+                    plates[i].targetY = requiredY;
+                    ++overlaps;
+                }
+            }
+
+            if (plates[i].targetY > maxRaise) {
+                plates[i].targetY = maxRaise;
+            }
+            if (plates[i].targetY > maxOffset) {
+                maxOffset = plates[i].targetY;
+            }
+        }
+
+        char line[256];
+        sprintf_s(line,
+            "NamePlateAPI stacking calc mode=%d plates=%d overlaps=%d maxOffset=%.4f topPlate=0x%p topXY=%.4f,%.4f",
+            stacking, count, overlaps, maxOffset, plates[0].plate, plates[0].x, plates[0].y);
+        Log(line);
     }
 
     void LogNameplateStatusIfNeeded() {
@@ -365,6 +494,7 @@ namespace {
         InterlockedIncrement(const_cast<LONG*>(&NameplateUpdateCount));
         PollNameplateCVars();
         int result = OriginalUpdateNamePlatePositions(worldFrame);
+        LogStackingCalculationIfNeeded();
         LogNameplateStatusIfNeeded();
         return result;
     }
