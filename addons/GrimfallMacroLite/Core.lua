@@ -43,6 +43,7 @@ local nameplateCVarDefs = {
 local cameraCVarDefs = {
     { key = "cameraFov", label = "Field of View", min = 60, max = 150, step = 1, default = 100 },
     { key = "cameraDistanceMax", label = "Max Camera Distance", min = 0, max = 50, step = 1, default = 15 },
+    { key = "showPlayer", label = "Show Player", kind = "check", default = 1 },
     { key = "cameraIndirectVisibility", label = "Indirect Visibility", kind = "check", default = 1 },
     { key = "cameraIndirectAlpha", label = "Indirect Alpha", min = 0.6, max = 1, step = 0.05, default = 0.6 },
 }
@@ -51,24 +52,28 @@ local cameraPresets = {
     Default = {
         cameraFov = 100,
         cameraDistanceMax = 15,
+        showPlayer = 1,
         cameraIndirectVisibility = 1,
         cameraIndirectAlpha = 0.6,
     },
     Wide = {
         cameraFov = 115,
         cameraDistanceMax = 35,
+        showPlayer = 1,
         cameraIndirectVisibility = 1,
         cameraIndirectAlpha = 0.75,
     },
     Raid = {
         cameraFov = 110,
         cameraDistanceMax = 50,
+        showPlayer = 1,
         cameraIndirectVisibility = 1,
         cameraIndirectAlpha = 0.8,
     },
     Cinematic = {
         cameraFov = 85,
         cameraDistanceMax = 25,
+        showPlayer = 1,
         cameraIndirectVisibility = 0,
         cameraIndirectAlpha = 0.6,
     },
@@ -473,6 +478,16 @@ local function applyCameraPreset(name)
     end
 end
 
+local function cameraStatusText()
+    local fov = safeGetCVar("cameraFov")
+    local showPlayer = safeGetCVar("showPlayer")
+    local indirect = safeGetCVar("cameraIndirectVisibility")
+    if fov == nil or showPlayer == nil or indirect == nil then
+        return "Backend camera CVars: unavailable"
+    end
+    return "Backend camera CVars: active  FOV " .. tostring(fov) .. "  Player " .. tostring(showPlayer) .. "  Indirect " .. tostring(indirect)
+end
+
 local function addPanelBackdrop(frame)
     frame:SetBackdrop({
         bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
@@ -775,6 +790,9 @@ local function refreshControls()
     if ui.RefreshNameplatePage then
         ui.RefreshNameplatePage()
     end
+    if ui.cameraStatus then
+        ui.cameraStatus:SetText(cameraStatusText())
+    end
     ui.status:SetText(backendStatusText())
 end
 
@@ -1060,17 +1078,21 @@ function Addon:CreateWindow()
     createRule(ui.pages.camera, cameraTitle, -9)
     local cameraDescription = createDescription(
         ui.pages.camera,
-        "Camera controls use existing Grimfall client CVars. These do not install additional DLL hooks.",
+        "Camera controls are backed by MacroLite CVars. Indirect visibility is experimental.",
         cameraTitle,
         0,
         -14,
         360)
     cameraDescription:SetHeight(36)
 
+    local cameraStatus = createDescription(ui.pages.camera, "", cameraDescription, 0, -28, 360)
+    cameraStatus:SetHeight(18)
+    ui.cameraStatus = cameraStatus
+
     ui.cameraControls = {}
     for index, def in ipairs(cameraCVarDefs) do
         local cvarDef = def
-        local y = -86 - ((index - 1) * 54)
+        local y = -96 - ((index - 1) * 44)
         local control
         if cvarDef.kind == "check" then
             control = createCheck(ui.pages.camera, "Camera" .. index, cvarDef.label, 18, y,
@@ -1085,11 +1107,11 @@ function Addon:CreateWindow()
         table.insert(ui.controls, control)
     end
 
-    local presetTitle = createSectionTitle(ui.pages.camera, "Presets", "TOPLEFT", 18, -316)
+    local presetTitle = createSectionTitle(ui.pages.camera, "Presets", "TOPLEFT", 18, -332)
     createRule(ui.pages.camera, presetTitle, -9)
 
     local defaultCamera = createButton(ui.pages.camera, "Default", 78, 24)
-    defaultCamera:SetPoint("TOPLEFT", 18, -350)
+    defaultCamera:SetPoint("TOPLEFT", 18, -366)
     skinActionButton(defaultCamera)
     defaultCamera:SetScript("OnClick", function()
         applyCameraPreset("Default")
@@ -1125,7 +1147,7 @@ function Addon:CreateWindow()
     end)
 
     local resetCamera = createButton(ui.pages.camera, "Reset Camera", 104, 24)
-    resetCamera:SetPoint("TOPLEFT", 18, -390)
+    resetCamera:SetPoint("TOPLEFT", 18, -406)
     skinActionButton(resetCamera)
     resetCamera:SetScript("OnClick", function()
         resetCameraCVars()

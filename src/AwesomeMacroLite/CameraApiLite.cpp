@@ -2,11 +2,13 @@
 
 #include "GameClientLite.h"
 #include "Log.h"
+#include "X86Hook.h"
 
 #include <math.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <windows.h>
 
 namespace AwesomeMacroLite {
@@ -14,21 +16,35 @@ namespace {
     constexpr uintptr_t kCVarGet = 0x00767460;
     constexpr uintptr_t kCVarRegister = 0x00767FC0;
     constexpr uintptr_t kGetActiveCamera = 0x004F5960;
+    constexpr uintptr_t kWorldFrameIntersect = 0x0077F310;
+    constexpr uintptr_t kIntersectCallSite = 0x006060E6;
+    constexpr uintptr_t kIntersectCallJumpBack = 0x00606103;
+    constexpr uintptr_t kIterateCollisionListSite = 0x007A279D;
+    constexpr uintptr_t kIterateCollisionListJumpBack = 0x007A27A5;
+    constexpr uintptr_t kIterateCollisionListSkip = 0x007A2943;
+    constexpr uintptr_t kIterateWorldObjCollisionListSite = 0x007A2A1C;
+    constexpr uintptr_t kIterateWorldObjCollisionListJumpBack = 0x007A2A23;
+    constexpr uintptr_t kIterateWorldObjCollisionListSkip = 0x007A2A8A;
     constexpr size_t kCVarValueOffset = 0x28;
     constexpr size_t kCameraFovOffset = 0x40;
     constexpr size_t kPlayerScaleXOffset = 0x98;
+    constexpr size_t kModelAlphaOffset = 0x17C;
     constexpr DWORD kPollIntervalMs = 250;
     constexpr float kPi = 3.14159265358979323846f;
+    constexpr int kMaxIndirectModels = 64;
 
     using CVarHandlerFn = int(__cdecl*)(void* cvar, const char* previousValue, const char* newValue, void* userData);
     using CVarGetFn = void* (__cdecl*)(const char* name);
     using CVarRegisterFn = void* (__cdecl*)(const char* name, const char* description, unsigned flags, const char* defaultValue,
         CVarHandlerFn callback, int a6, int a7, int a8, int a9);
     using GetActiveCameraFn = void* (__cdecl*)();
+    using WorldFrameIntersectFn = char(__cdecl*)(C3Vector* playerPos, C3Vector* cameraPos, C3Vector* hitPoint,
+        float* hitDistance, uint32_t hitFlags, uintptr_t buffer);
 
     auto CVarGet = reinterpret_cast<CVarGetFn>(kCVarGet);
     auto CVarRegister = reinterpret_cast<CVarRegisterFn>(kCVarRegister);
     auto GetActiveCamera = reinterpret_cast<GetActiveCameraFn>(kGetActiveCamera);
+    auto WorldFrameIntersect = reinterpret_cast<WorldFrameIntersectFn>(kWorldFrameIntersect);
 
     void* CVarCameraFov = nullptr;
     void* CVarCameraIndirectVisibility = nullptr;
@@ -40,6 +56,25 @@ namespace {
     int LastFovMilli = 0;
     int LastShowPlayer = -1;
     int LastProbeSeq = -1;
+    int LastIndirectVisibility = -1;
+    int LastIndirectAlphaMilli = 0;
+    volatile LONG CameraIndirectHooksInstalled = 0;
+    volatile LONG CameraIndirectVisibilityEnabled = 0;
+    float CameraIndirectAlpha = 1.0f;
+    float ActualCameraDistance = 1.0f;
+    void* OriginalIntersectCall = nullptr;
+    void* OriginalIterateCollisionList = nullptr;
+    void* OriginalIterateWorldObjCollisionList = nullptr;
+
+    struct IndirectModelRecord {
+        void* model;
+        float originalAlpha;
+        uint32_t grace;
+        bool fading;
+        bool current;
+    };
+
+    IndirectModelRecord IndirectModels[kMaxIndirectModels] = {};
 
     bool IsReadable(void* address, size_t size) {
         if (!address || !size) return false;
@@ -97,6 +132,15 @@ namespace {
         return ClampInt(atoi(value), minimum, maximum);
     }
 
+    float ReadCVarFloat(void* cvar, float fallback, float minimum, float maximum) {
+        const char* value = ReadCVarString(cvar);
+        if (!value) return fallback;
+        float parsed = static_cast<float>(atof(value));
+        if (parsed < minimum) return minimum;
+        if (parsed > maximum) return maximum;
+        return parsed;
+    }
+
     void* RegisterCameraCVar(const char* name, const char* defaultValue) {
         if (void* existing = CVarGet(name)) {
             return existing;
@@ -131,6 +175,308 @@ namespace {
         if (!IsWritable(scaleX, sizeof(float))) return;
 
         *scaleX = showPlayer ? 1.0f : 0.0f;
+    }
+
+    float* ModelAlpha(void* model) {
+        if (!model) return nullptr;
+        auto* alpha = reinterpret_cast<float*>(static_cast<BYTE*>(model) + kModelAlphaOffset);
+        if (!IsWritable(alpha, sizeof(float))) return nullptr;
+        return alpha;
+    }
+
+    IndirectModelRecord* FindIndirectModel(void* model) {
+        if (!model) return nullptr;
+        for (int i = 0; i < kMaxIndirectModels; ++i) {
+            if (IndirectModels[i].model == model) {
+                return &IndirectModels[i];
+            }
+        }
+        return nullptr;
+    }
+
+    IndirectModelRecord* GetOrAddIndirectModel(void* model) {
+        if (IndirectModelRecord* existing = FindIndirectModel(model)) {
+            return existing;
+        }
+
+        float* alpha = ModelAlpha(model);
+        if (!alpha) return nullptr;
+
+        for (int i = 0; i < kMaxIndirectModels; ++i) {
+            if (!IndirectModels[i].model) {
+                IndirectModels[i] = { model, *alpha, 0, true, false };
+                return &IndirectModels[i];
+            }
+        }
+        return nullptr;
+    }
+
+    bool IsCurrentIndirectModel(void* model) {
+        if (IndirectModelRecord* record = FindIndirectModel(model)) {
+            return record->current;
+        }
+        return false;
+    }
+
+    void ClearCurrentIndirectModels() {
+        for (int i = 0; i < kMaxIndirectModels; ++i) {
+            IndirectModels[i].current = false;
+        }
+    }
+
+    void RestoreIndirectModels() {
+        for (int i = 0; i < kMaxIndirectModels; ++i) {
+            IndirectModelRecord& record = IndirectModels[i];
+            if (!record.model) continue;
+            if (float* alpha = ModelAlpha(record.model)) {
+                *alpha = record.originalAlpha;
+            }
+            record = {};
+        }
+        ActualCameraDistance = 1.0f;
+    }
+
+    void TickIndirectModelFade() {
+        uint32_t cleanupTimer = 1;
+        for (int i = 0; i < kMaxIndirectModels; ++i) {
+            if (IndirectModels[i].model) {
+                ++cleanupTimer;
+            }
+        }
+
+        for (int i = 0; i < kMaxIndirectModels; ++i) {
+            IndirectModelRecord& record = IndirectModels[i];
+            if (!record.model) continue;
+
+            float* alpha = ModelAlpha(record.model);
+            if (!alpha) {
+                record = {};
+                continue;
+            }
+
+            if (record.current) {
+                *alpha += (CameraIndirectAlpha - *alpha) * 0.25f;
+            }
+            else if (record.grace > cleanupTimer) {
+                *alpha += (record.originalAlpha - *alpha) * 0.25f;
+                if (fabsf(*alpha - record.originalAlpha) < 0.01f) {
+                    *alpha = record.originalAlpha;
+                    record = {};
+                    continue;
+                }
+            }
+
+            ++record.grace;
+        }
+    }
+
+    char __cdecl CameraIntersectHook(C3Vector* playerPos, C3Vector* cameraPos, C3Vector* hitPoint,
+        float* hitDistance, uint32_t hitFlags, uintptr_t buffer) {
+        memset(reinterpret_cast<void*>(buffer), 0, 2048);
+
+        char result = WorldFrameIntersect(playerPos, cameraPos, hitPoint, hitDistance,
+            hitFlags + 1 + 0x8000000, buffer);
+        if (result) {
+            const auto* bufferData = reinterpret_cast<const uint32_t*>(buffer);
+            if ((bufferData[0] == 1 || bufferData[0] == 2) && bufferData[1] > 0) {
+                void* model = *reinterpret_cast<void**>(buffer + 12 + 80);
+                if (IndirectModelRecord* record = GetOrAddIndirectModel(model)) {
+                    record->current = true;
+                    record->fading = true;
+                    record->grace = 0;
+
+                    if (float* alpha = ModelAlpha(model)) {
+                        *alpha += (CameraIndirectAlpha - *alpha) * 0.25f;
+                    }
+
+                    if (ActualCameraDistance < 1.0f) {
+                        *hitDistance = ActualCameraDistance;
+                    }
+                    else {
+                        result = 0;
+                    }
+                }
+            }
+            else {
+                ClearCurrentIndirectModels();
+                ActualCameraDistance = *hitDistance;
+            }
+        }
+        else {
+            ClearCurrentIndirectModels();
+            ActualCameraDistance = 1.0f;
+        }
+
+        TickIndirectModelFade();
+        return result;
+    }
+
+    bool __cdecl CameraCollisionFilter(void* model) {
+        if (!InterlockedCompareExchange(const_cast<LONG*>(&CameraIndirectVisibilityEnabled), 0, 0)) {
+            return true;
+        }
+        return !IsCurrentIndirectModel(model);
+    }
+
+    void __declspec(naked) IntersectCallHook() {
+        __asm {
+            cmp dword ptr [CameraIndirectVisibilityEnabled], 0
+            jne indirect_enabled
+
+            fld1
+            push 0
+            push ebx
+            fstp dword ptr [ebp + 0x18]
+            lea ecx, [ebp + 0x18]
+            push ecx
+            lea edx, [ebp - 0x48]
+            push edx
+            lea eax, [ebp - 0x18]
+            push eax
+            lea ecx, [ebp - 0x24]
+            push ecx
+            mov eax, kWorldFrameIntersect
+            call eax
+            push kIntersectCallJumpBack
+            ret
+
+        indirect_enabled:
+            sub esp, 2048
+            lea eax, [esp]
+            fld1
+            push eax
+            and ebx, ~1
+            push ebx
+            fstp dword ptr [ebp + 0x18]
+            lea ecx, [ebp + 0x18]
+            push ecx
+            lea edx, [ebp - 0x48]
+            push edx
+            lea eax, [ebp - 0x18]
+            push eax
+            lea ecx, [ebp - 0x24]
+            push ecx
+            call CameraIntersectHook
+            add esp, 2048
+            push kIntersectCallJumpBack
+            ret
+        }
+    }
+
+    void __declspec(naked) IterateCollisionListHook() {
+        __asm {
+            cmp dword ptr [CameraIndirectVisibilityEnabled], 0
+            jne indirect_enabled
+
+            mov esi, [edx + 4]
+            je original_skip
+            cmp byte ptr [esi + 0x25], bl
+            push kIterateCollisionListJumpBack
+            ret
+
+        original_skip:
+            push kIterateCollisionListJumpBack
+            ret
+
+        indirect_enabled:
+            mov esi, [edx + 4]
+            pushfd
+            push eax
+            push ecx
+            push edx
+            mov eax, [ebp + 0x0C]
+            and eax, 0x8000000
+            jz run_collision_processing
+            mov eax, [esi + 0x34]
+            test eax, eax
+            jz skip_collision_processing
+            push eax
+            call CameraCollisionFilter
+            add esp, 4
+            test al, al
+            je skip_collision_processing
+
+        run_collision_processing:
+            pop edx
+            pop ecx
+            pop eax
+            popfd
+            cmp byte ptr [esi + 0x25], bl
+            push kIterateCollisionListJumpBack
+            ret
+
+        skip_collision_processing:
+            pop edx
+            pop ecx
+            pop eax
+            popfd
+            push kIterateCollisionListSkip
+            ret
+        }
+    }
+
+    void __declspec(naked) IterateWorldObjCollisionListHook() {
+        __asm {
+            cmp dword ptr [CameraIndirectVisibilityEnabled], 0
+            jne indirect_enabled
+
+            cmp dword ptr [eax + 0x2D8], 0
+            push kIterateWorldObjCollisionListJumpBack
+            ret
+
+        indirect_enabled:
+            mov edx, [ebp + 0x0C]
+            test edx, 0x8000000
+            jz run_collision_processing
+            push eax
+            call CameraCollisionFilter
+            add esp, 4
+            test al, al
+            je skip_collision_processing
+
+        run_collision_processing:
+            mov eax, [ebp - 0x68]
+            cmp dword ptr [eax + 0x2D8], 0
+            push kIterateWorldObjCollisionListJumpBack
+            ret
+
+        skip_collision_processing:
+            push kIterateWorldObjCollisionListSkip
+            ret
+        }
+    }
+
+    bool InstallCameraIndirectHooks() {
+        if (InterlockedCompareExchange(const_cast<LONG*>(&CameraIndirectHooksInstalled), 1, 0) != 0) {
+            return true;
+        }
+
+        const BYTE intersectExpected[] = {
+            0xD9, 0xE8, 0x6A, 0x00, 0x53, 0xD9, 0x5D, 0x18,
+            0x8D, 0x4D, 0x18, 0x51, 0x8D, 0x55, 0xB8, 0x52,
+            0x8D, 0x45, 0xE8, 0x50, 0x8D, 0x4D, 0xDC, 0x51,
+            0xE8, 0x0D, 0x92, 0x17, 0x00
+        };
+        const BYTE iterateExpected[] = { 0x8B, 0x72, 0x04, 0x74, 0x09, 0x38, 0x5E, 0x25 };
+        const BYTE iterateWorldExpected[] = { 0x83, 0xB8, 0xD8, 0x02, 0x00, 0x00, 0x00 };
+
+        bool ok = true;
+        ok = InstallJumpHook("Camera IntersectCall", kIntersectCallSite, intersectExpected, sizeof(intersectExpected),
+            reinterpret_cast<void*>(&IntersectCallHook), &OriginalIntersectCall) && ok;
+        ok = InstallJumpHook("Camera IterateCollisionList", kIterateCollisionListSite, iterateExpected, sizeof(iterateExpected),
+            reinterpret_cast<void*>(&IterateCollisionListHook), &OriginalIterateCollisionList) && ok;
+        ok = InstallJumpHook("Camera IterateWorldObjCollisionList", kIterateWorldObjCollisionListSite, iterateWorldExpected, sizeof(iterateWorldExpected),
+            reinterpret_cast<void*>(&IterateWorldObjCollisionListHook), &OriginalIterateWorldObjCollisionList) && ok;
+
+        if (!ok) {
+            InterlockedExchange(const_cast<LONG*>(&CameraIndirectHooksInstalled), 0);
+            InterlockedExchange(const_cast<LONG*>(&CameraIndirectVisibilityEnabled), 0);
+            Log("CameraAPI indirect visibility hook install failed");
+            return false;
+        }
+
+        Log("CameraAPI indirect visibility hooks installed");
+        return true;
     }
 
     bool ReadFloatField(void* base, size_t offset, float& value) {
@@ -264,14 +610,38 @@ void PollCameraApi() {
         char line[96];
         sprintf_s(line, "CameraAPI showPlayer=%d", showPlayer);
         Log(line);
-        LogCameraProbe("showPlayer-change", LastProbeSeq);
     }
     ApplyShowPlayer(showPlayer);
 
     int probeSeq = ReadCVarInt(CVarCameraProbeSeq, 0, 0, 0x7FFFFFFF);
-    if (probeSeq != LastProbeSeq) {
+    if (probeSeq > 0 && probeSeq != LastProbeSeq) {
         LastProbeSeq = probeSeq;
         LogCameraProbe("probe-seq", probeSeq);
+    }
+
+    int indirectVisibility = ReadCVarInt(CVarCameraIndirectVisibility, 0, 0, 1);
+    int indirectAlphaMilli = ReadCVarFloatMilli(CVarCameraIndirectAlpha, 600, 600, 1000);
+    CameraIndirectAlpha = static_cast<float>(indirectAlphaMilli) / 1000.0f;
+    if (indirectAlphaMilli != LastIndirectAlphaMilli) {
+        LastIndirectAlphaMilli = indirectAlphaMilli;
+        char line[96];
+        sprintf_s(line, "CameraAPI indirectAlpha=%d", indirectAlphaMilli);
+        Log(line);
+    }
+
+    if (indirectVisibility != LastIndirectVisibility) {
+        LastIndirectVisibility = indirectVisibility;
+        if (indirectVisibility) {
+            if (InstallCameraIndirectHooks()) {
+                InterlockedExchange(const_cast<LONG*>(&CameraIndirectVisibilityEnabled), 1);
+                Log("CameraAPI indirectVisibility=1");
+            }
+        }
+        else {
+            InterlockedExchange(const_cast<LONG*>(&CameraIndirectVisibilityEnabled), 0);
+            RestoreIndirectModels();
+            Log("CameraAPI indirectVisibility=0");
+        }
     }
 }
 }
