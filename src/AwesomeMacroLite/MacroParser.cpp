@@ -1,5 +1,6 @@
 #include "MacroParser.h"
 
+#include "CameraApiLite.h"
 #include "GameClientLite.h"
 #include "Log.h"
 #include "MacroTargetState.h"
@@ -92,6 +93,7 @@ namespace {
         LONG call = InterlockedIncrement(&calls);
 
         int result = g_originalSecureCmdOptionParse(luaState);
+        PollCameraApi();
         RewriteSecureReturnIfNeeded(luaState, call);
         return result;
     }

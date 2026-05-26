@@ -168,9 +168,6 @@ namespace {
         }
 
         void* cvar = CVarRegister(name, nullptr, 1, defaultValue, nullptr, 0, 0, 0, 0);
-        char line[192];
-        sprintf_s(line, "NamePlateAPI registered CVar name=%s ptr=0x%p default=%s", name, cvar, defaultValue);
-        Log(line);
         return cvar;
     }
 
@@ -262,7 +259,7 @@ namespace {
             ApplyNameplateDistance(apiEnabled, distance);
         }
 
-        if (forceLog || oldApi != apiEnabled || oldDebug != debugEnabled || oldStacking != stacking || oldPatchApply != patchApply || oldDistance != distance || oldPlacement != placement) {
+        if (oldApi != apiEnabled || oldDebug != debugEnabled || oldStacking != stacking || oldPatchApply != patchApply || oldDistance != distance || oldPlacement != placement) {
             char line[320];
             sprintf_s(line,
                 "NamePlateAPI CVar poll api=%d debug=%d positioning=%d distance=%d stacking=%d patchApply=%d clampTop=%d raiseSpeed=%d lowerSpeed=%d pullMilli=%d placementMilli=%d",
@@ -559,6 +556,10 @@ namespace {
         int result = OriginalNamePlateInitialize(plate, unit);
         guid_t guid = ReadNamePlateGuid(plate);
         TrackNamePlateCreated(plate, guid);
+
+        if (!InterlockedCompareExchange(const_cast<LONG*>(&NameplateDebug), 0, 0)) {
+            return result;
+        }
 
         LONG created = InterlockedCompareExchange(const_cast<LONG*>(&NameplateCreatedCount), 0, 0);
         if (created <= 25 || (created % 100) == 0) {
