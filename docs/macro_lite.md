@@ -39,6 +39,10 @@ The current Grimfall target also registers nameplate CVars after the client CVar
 initialization path runs. Nameplate code is isolated in
 `src/AwesomeMacroLite/NameplateApi.cpp`.
 
+Positioning is currently opt-in. Set `grimfallNameplatePositioning` to `1` to
+route the nameplate visibility projection through the MacroLite placement
+offset. Leave it at `0` while testing unrelated Nameplate API hooks.
+
 ## Module Layout
 
 - `Entry.cpp`: DLL startup and hook initialization order.
@@ -48,7 +52,8 @@ initialization path runs. Nameplate code is isolated in
 - `GameClientLite.h`: minimal Grimfall/WotLK addresses and client structs.
 - `MacroParser.cpp`: `SecureCmdOptionParse` rewrite for macro targets.
 - `MacroTargetState.cpp`: armed `cursor` / `playerlocation` state and timeout cleanup.
-- `NameplateApi.cpp`: Grimfall nameplate CVars, distance application, and lifecycle logging.
+- `NameplateApi.cpp`: Grimfall nameplate CVars, distance application, opt-in
+  anchor positioning, and lifecycle logging.
 - `SpellStanceFix.cpp`: SlimDetours-backed stance/form byte update after successful form casts.
 - `TerrainTargeting.cpp`: terrain submit hook for ground-target casts.
 
