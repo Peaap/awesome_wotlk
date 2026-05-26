@@ -52,10 +52,10 @@ More detail is in `TRUST.md` and `docs/macro_lite.md`.
 
 ## Addon UI
 
-The `addons/GrimfallMacroLite` folder contains an Ace3-based options UI for
-Grimfall MacroLite settings. It currently saves addon bridge settings and will
-mirror them into `grimfallAddonBridge`, `grimfallAddonBridgeTrace`, and
-`grimfallAddonBridgeMaxBytes` once the backend registers those CVars.
+The `addons/GrimfallMacroLite` folder contains an Ace3-backed custom options
+UI for Grimfall MacroLite settings. It currently saves addon bridge settings
+and will mirror them into `grimfallAddonBridge`, `grimfallAddonBridgeTrace`,
+and `grimfallAddonBridgeMaxBytes` once the backend registers those CVars.
 Ace3 `Release-r1390` is embedded so users do not need a separate Ace3 install.
 
 Open it with `/gml`, `/grimfallmacrolite`, or Interface Options.
