@@ -1,6 +1,8 @@
 project(AwesomeMacroLite)
 
 add_library(${PROJECT_NAME} SHARED
+    "AddonBridge.cpp"
+    "AddonBridge.h"
     "Entry.cpp"
     "Log.cpp"
     "MacroParser.cpp"

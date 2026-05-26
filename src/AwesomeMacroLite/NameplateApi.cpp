@@ -1,3 +1,4 @@
+#include "AddonBridge.h"
 #include "NameplateApi.h"
 
 #include "Log.h"
@@ -58,6 +59,7 @@ namespace {
     void* OriginalUpdateNamePlatePositionsSite = nullptr;
 
     void* CVarNameplateApi = nullptr;
+    void* CVarNameplateDebug = nullptr;
     void* CVarNameplatePositioning = nullptr;
     void* CVarNameplateDistance = nullptr;
     void* CVarNameplateStacking = nullptr;
@@ -85,6 +87,7 @@ namespace {
     void* CVarNameplateHysteresisDecay = nullptr;
 
     volatile LONG NameplateApiEnabled = 1;
+    volatile LONG NameplateDebug = 0;
     volatile LONG NameplateStackingMode = 0;
     volatile LONG NameplateStackingPatchApply = 0;
     volatile LONG NameplateBandXMilli = 700;
@@ -176,6 +179,7 @@ namespace {
         }
 
         CVarNameplateApi = RegisterNameplateCVar("grimfallNameplateApi", "1");
+        CVarNameplateDebug = RegisterNameplateCVar("grimfallNameplateDebug", "0");
         CVarNameplatePositioning = RegisterNameplateCVar("grimfallNameplatePositioning", "0");
         CVarNameplateStacking = RegisterNameplateCVar("grimfallNameplateStacking", "0");
         CVarNameplateStackingPatchApply = RegisterNameplateCVar("grimfallNameplateStackingPatchApply", "0");
@@ -230,6 +234,7 @@ namespace {
 
     void PollNameplateCVars(bool forceLog = false) {
         int apiEnabled = StringToBool(ReadCVarString(CVarNameplateApi)) ? 1 : 0;
+        int debugEnabled = StringToBool(ReadCVarString(CVarNameplateDebug)) ? 1 : 0;
         int positioningEnabled = StringToBool(ReadCVarString(CVarNameplatePositioning)) ? 1 : 0;
         int distance = ReadCVarInt(CVarNameplateDistance, 41, 0, 100);
         int stacking = ReadCVarInt(CVarNameplateStacking, 0, 0, 3);
@@ -244,6 +249,7 @@ namespace {
         int placement = ReadCVarFloatMilli(CVarNameplatePlacement, 0, -1000, 2000);
 
         LONG oldApi = InterlockedExchange(const_cast<LONG*>(&NameplateApiEnabled), apiEnabled);
+        LONG oldDebug = InterlockedExchange(const_cast<LONG*>(&NameplateDebug), debugEnabled);
         LONG oldStacking = InterlockedExchange(const_cast<LONG*>(&NameplateStackingMode), stacking);
         LONG oldPatchApply = InterlockedExchange(const_cast<LONG*>(&NameplateStackingPatchApply), patchApply);
         InterlockedExchange(const_cast<LONG*>(&NameplateBandXMilli), bandX);
@@ -255,11 +261,11 @@ namespace {
             ApplyNameplateDistance(apiEnabled, distance);
         }
 
-        if (forceLog || oldApi != apiEnabled || oldStacking != stacking || oldPatchApply != patchApply || oldDistance != distance || oldPlacement != placement) {
+        if (forceLog || oldApi != apiEnabled || oldDebug != debugEnabled || oldStacking != stacking || oldPatchApply != patchApply || oldDistance != distance || oldPlacement != placement) {
             char line[320];
             sprintf_s(line,
-                "NamePlateAPI CVar poll api=%d positioning=%d distance=%d stacking=%d patchApply=%d clampTop=%d raiseSpeed=%d lowerSpeed=%d pullMilli=%d placementMilli=%d",
-                apiEnabled, positioningEnabled, distance, stacking, patchApply, clampTop, raiseSpeed, lowerSpeed, pullDistance, placement);
+                "NamePlateAPI CVar poll api=%d debug=%d positioning=%d distance=%d stacking=%d patchApply=%d clampTop=%d raiseSpeed=%d lowerSpeed=%d pullMilli=%d placementMilli=%d",
+                apiEnabled, debugEnabled, positioningEnabled, distance, stacking, patchApply, clampTop, raiseSpeed, lowerSpeed, pullDistance, placement);
             Log(line);
         }
     }
@@ -485,14 +491,20 @@ namespace {
             }
         }
 
-        char line[256];
-        sprintf_s(line,
-            "NamePlateAPI stacking calc mode=%d plates=%d overlaps=%d maxOffset=%.4f topPlate=0x%p topXY=%.4f,%.4f",
-            stacking, count, overlaps, maxOffset, plates[0].plate, plates[0].x, plates[0].y);
-        Log(line);
+        if (InterlockedCompareExchange(const_cast<LONG*>(&NameplateDebug), 0, 0)) {
+            char line[256];
+            sprintf_s(line,
+                "NamePlateAPI stacking calc mode=%d plates=%d overlaps=%d maxOffset=%.4f topPlate=0x%p topXY=%.4f,%.4f",
+                stacking, count, overlaps, maxOffset, plates[0].plate, plates[0].x, plates[0].y);
+            Log(line);
+        }
     }
 
     void LogNameplateStatusIfNeeded() {
+        if (!InterlockedCompareExchange(const_cast<LONG*>(&NameplateDebug), 0, 0)) {
+            return;
+        }
+
         DWORD now = GetTickCount();
         if (LastStatusLogTick != 0 && now - LastStatusLogTick < kStatusLogIntervalMs) {
             return;
@@ -535,6 +547,7 @@ namespace {
 
     void __cdecl CVarInitializeHook() {
         OriginalCVarInitialize();
+        RegisterAddonBridgeCVars("CVarInitialize");
         if (RegisterNameplateCVars("CVarInitialize")) {
             PollNameplateCVars(true);
         }
@@ -588,6 +601,7 @@ namespace {
     int __cdecl UpdateNamePlatePositionsHook(void* worldFrame) {
         InterlockedIncrement(const_cast<LONG*>(&NameplateUpdateCount));
         PollNameplateCVars();
+        PollAddonBridge();
         int result = OriginalUpdateNamePlatePositions(worldFrame);
         LogStackingCalculationIfNeeded();
         LogNameplateStatusIfNeeded();

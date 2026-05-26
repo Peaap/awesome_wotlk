@@ -1,3 +1,4 @@
+#include "AddonBridge.h"
 #include "Log.h"
 #include "MacroParser.h"
 #include "NameplateApi.h"
@@ -35,6 +36,7 @@ namespace {
         AwesomeMacroLite::InstallTerrainTargetingHook();
         AwesomeMacroLite::InstallSpellStanceFixHook();
         AwesomeMacroLite::InstallNameplateApiHooks();
+        AwesomeMacroLite::RegisterAddonBridgeCVars("InitThread");
         return 0;
     }
 }
