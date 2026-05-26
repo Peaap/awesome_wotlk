@@ -28,6 +28,7 @@ installing hooks.
 - waits for `ClientExtensions.DLL` before installing hooks
 - uses one manual x86 trampoline at `SecureCmdOptionParse`
 - uses one manual x86 trampoline at `CGWorldFrame::OnLayerTrackTerrain`
+- uses one manual x86 trampoline at the spell cast path for the stance/form fix
 - verifies the expected hook bytes before patching memory
 - clears armed macro-target flags after a short timeout or successful terrain click
 - logs startup, hook install, rewrite/click events, timeout cleanup, and hook-byte mismatches
@@ -60,6 +61,7 @@ GrimfallWotlkPatch.exe --unpatch C:\Path\To\Grimfall-WoW\Wow.exe
 This Grimfall WoW build keeps the stable feature set narrow.
 
 - enabled: macro conditional ground-target casts for `cursor` and `playerlocation`
+- enabled: stance/form double-cast fix
 - disabled: full Awesome modules until each one is isolated and reverified
 
 That avoids known conflicts with Grimfall WoW's existing runtime hooks through

@@ -19,9 +19,11 @@ namespace AwesomeMacroLite {
 
     struct CGObjectLite {
         void** vtable;
+        uint32_t* values;
     };
 
     namespace Addresses {
+        constexpr uintptr_t SpellOnCast = 0x0080DA40;
         constexpr uintptr_t SecureCmdOptionParse = 0x00564AE0;
         constexpr uintptr_t OnLayerTrackTerrain = 0x004F66C0;
         constexpr uintptr_t LuaGetTop = 0x0084DBD0;
@@ -37,7 +39,10 @@ namespace AwesomeMacroLite {
 
     constexpr int LuaStringType = 4;
     constexpr uint32_t TypeMaskPlayer = 0x10;
+    constexpr uint32_t UnitFieldBytes2 = 0x7A;
+    constexpr uint8_t ShapeshiftFormByteOffset = 3;
 
+    using SpellOnCastFn = int(__cdecl*)(int spellId, int a2, int a3, int a4, int a5);
     using SecureCmdOptionParseFn = int(__cdecl*)(void* luaState);
     using OnLayerTrackTerrainFn = int(__thiscall*)(void* worldFrame, int* terrainArgs);
     using LuaGetTopFn = int(__cdecl*)(void* luaState);

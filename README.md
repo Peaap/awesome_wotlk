@@ -15,7 +15,8 @@ full renderer, camera, voice, nameplate, and addon-bridge hook surface.
 - Installed DLL: `%WOW_ROOT%\AwesomeMacroLite.dll`
 - Runtime log: `%WOW_ROOT%\_mpq_tools\reports\macro_lite\awesome_macro_lite.log`
 - Required client: Grimfall WoW, based on 32-bit WotLK 3.3.5a build 12340
-- Current feature: `[@cursor]` and `[@playerlocation]` ground-target macro casts
+- Current features: `[@cursor]` / `[@playerlocation]` ground-target macro casts,
+  and the stance/form double-cast fix
 
 Build and install:
 
