@@ -7,8 +7,8 @@ MacroLite path.
 `AwesomeMacroLite.dll` implements the Grimfall-tested feature path. It patches
 the secure macro parser and terrain-submit path for ground-target spells,
 includes Spell stance support, and registers the modular Nameplate API CVars.
-Nameplate positioning is opt-in through `grimfallNameplatePositioning` while
-stacking/layout work is ported in small verified pieces.
+The unsafe visibility-positioning hook is disabled while stacking/layout is
+ported in smaller verified pieces.
 
 ## Current Safe Target
 
@@ -18,8 +18,8 @@ stacking/layout work is ported in small verified pieces.
 - Runtime log: `%WOW_ROOT%\_mpq_tools\reports\macro_lite\awesome_macro_lite.log`
 - Required client: Grimfall WoW, based on 32-bit WotLK 3.3.5a build 12340
 - Current features: `[@cursor]` and `[@playerlocation]` ground-target macro
-  casts, Spell stance support, modular Nameplate API CVars, and opt-in
-  nameplate anchor positioning
+  casts, Spell stance support, modular Nameplate API CVars, distance control,
+  and nameplate lifecycle logging
 
 Build and install:
 

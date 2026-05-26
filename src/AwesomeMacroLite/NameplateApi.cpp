@@ -17,9 +17,6 @@ namespace {
     constexpr uintptr_t kNamePlateInitialize = 0x0098F390;
     constexpr uintptr_t kHideNamePlate = 0x00725840;
     constexpr uintptr_t kUpdateNamePlatePositions = 0x00725890;
-    constexpr uintptr_t kUnitIsVisible = 0x00715720;
-    constexpr uintptr_t kNdcToDdc = 0x0047BFF0;
-    constexpr uintptr_t kGetScreenCoordinates = 0x004F6D20;
     constexpr uintptr_t kNamePlateDistanceSquared = 0x00ADAA7C;
     constexpr uintptr_t kWorldFrameGlobal = 0x00B7436C;
     constexpr size_t kWorldFrameRenderDirtyFlagsOffset = 0xB10;
@@ -35,17 +32,6 @@ namespace {
     using NamePlateInitializeFn = int(__thiscall*)(void* plate, void* unit);
     using HideNamePlateFn = void* (__thiscall*)(void* unit);
     using UpdateNamePlatePositionsFn = int(__cdecl*)(void* worldFrame);
-    using UnitIsVisibleFn = bool(__thiscall*)(void* unit, void* worldFrame, void* out);
-    using GetNamePositionFn = void(__thiscall*)(void* unit, void* position);
-    using GetScreenCoordinatesFn = bool(__thiscall*)(void* worldFrame, void* position, void* out, int* resultMask);
-    using NdcToDdcFn = float(__cdecl*)(float ndcX, float ndcY, float* ddcX, float* ddcY);
-
-    struct C3Vector {
-        float x;
-        float y;
-        float z;
-    };
-
     struct NamePlateRecord {
         void* plate;
         guid_t guid;
@@ -55,14 +41,11 @@ namespace {
 
     auto CVarGet = reinterpret_cast<CVarGetFn>(kCVarGet);
     auto CVarRegister = reinterpret_cast<CVarRegisterFn>(kCVarRegister);
-    auto GetScreenCoordinates = reinterpret_cast<GetScreenCoordinatesFn>(kGetScreenCoordinates);
-    auto NdcToDdc = reinterpret_cast<NdcToDdcFn>(kNdcToDdc);
 
     CVarInitializeFn OriginalCVarInitialize = nullptr;
     NamePlateInitializeFn OriginalNamePlateInitialize = nullptr;
     HideNamePlateFn OriginalHideNamePlate = nullptr;
     UpdateNamePlatePositionsFn OriginalUpdateNamePlatePositions = nullptr;
-    UnitIsVisibleFn OriginalUnitIsVisible = nullptr;
 
     void* CVarNameplateApi = nullptr;
     void* CVarNameplatePositioning = nullptr;
@@ -91,7 +74,6 @@ namespace {
     void* CVarNameplateHysteresisDecay = nullptr;
 
     volatile LONG NameplateApiEnabled = 1;
-    volatile LONG NameplatePositioningEnabled = 0;
     volatile LONG NameplateDistance = 41;
     volatile LONG NameplatePlacementMilli = 0;
     volatile LONG NameplateActiveCount = 0;
@@ -197,15 +179,13 @@ namespace {
         int placement = ReadCVarFloatMilli(CVarNameplatePlacement, 0, -1000, 2000);
 
         LONG oldApi = InterlockedExchange(const_cast<LONG*>(&NameplateApiEnabled), apiEnabled);
-        LONG oldPositioning = InterlockedExchange(const_cast<LONG*>(&NameplatePositioningEnabled), positioningEnabled);
         LONG oldDistance = InterlockedExchange(const_cast<LONG*>(&NameplateDistance), distance);
         LONG oldPlacement = InterlockedExchange(const_cast<LONG*>(&NameplatePlacementMilli), placement);
         if (forceLog || oldApi != apiEnabled || oldDistance != distance) {
             ApplyNameplateDistance(apiEnabled, distance);
         }
 
-        if (forceLog || oldApi != apiEnabled || oldPositioning != positioningEnabled ||
-            oldDistance != distance || oldPlacement != placement) {
+        if (forceLog || oldApi != apiEnabled || oldDistance != distance || oldPlacement != placement) {
             char line[320];
             sprintf_s(line,
                 "NamePlateAPI CVar poll api=%d positioning=%d distance=%d stacking=%d clampTop=%d raiseSpeed=%d lowerSpeed=%d pullMilli=%d placementMilli=%d",
@@ -314,46 +294,6 @@ namespace {
         return result;
     }
 
-    bool __fastcall UnitIsVisibleHook(void* unit, void*, void* worldFrame, void* out) {
-        if (!unit || !worldFrame || !out ||
-            InterlockedCompareExchange(const_cast<LONG*>(&NameplateApiEnabled), 0, 0) == 0 ||
-            InterlockedCompareExchange(const_cast<LONG*>(&NameplatePositioningEnabled), 0, 0) == 0) {
-            return OriginalUnitIsVisible(unit, worldFrame, out);
-        }
-
-        void** vtable = *reinterpret_cast<void***>(unit);
-        if (!vtable || !vtable[8]) {
-            return OriginalUnitIsVisible(unit, worldFrame, out);
-        }
-
-        C3Vector worldPosition = {};
-        reinterpret_cast<GetNamePositionFn>(vtable[8])(unit, &worldPosition);
-        worldPosition.z += static_cast<float>(
-            InterlockedCompareExchange(const_cast<LONG*>(&NameplatePlacementMilli), 0, 0)) / 1000.0f;
-
-        int mask = 0;
-        if (GetScreenCoordinates(worldFrame, &worldPosition, out, &mask)) {
-            return true;
-        }
-
-        if (mask > 0) {
-            float marginX = 0.0f;
-            float marginY = 0.0f;
-            NdcToDdc(0.1f * 0.5f, 0.025f * 0.5f, &marginX, &marginY);
-
-            auto* projected = static_cast<C3Vector*>(out);
-            float left = *reinterpret_cast<float*>(static_cast<BYTE*>(worldFrame) + 0x48);
-            float top = *reinterpret_cast<float*>(static_cast<BYTE*>(worldFrame) + 0x4C);
-            float right = *reinterpret_cast<float*>(static_cast<BYTE*>(worldFrame) + 0x50);
-            float bottom = *reinterpret_cast<float*>(static_cast<BYTE*>(worldFrame) + 0x44);
-            if (projected->x >= -marginX && projected->x <= (right - left) + marginX &&
-                projected->y >= -marginY && projected->y <= (top - bottom) + marginY) {
-                return true;
-            }
-        }
-
-        return false;
-    }
 }
 
 void InstallNameplateApiHooks() {
@@ -366,12 +306,6 @@ void InstallNameplateApiHooks() {
     const BYTE updateExpected[] = { 0x55, 0x8B, 0xEC, 0x83, 0xEC, 0x18, 0x53, 0x8B, 0x1D, 0x88, 0xAA, 0xAD, 0x00 };
     if (InstallJumpHook("UpdateNamePlatePositions", kUpdateNamePlatePositions, updateExpected, sizeof(updateExpected),
         reinterpret_cast<void*>(&UpdateNamePlatePositionsHook), reinterpret_cast<void**>(&OriginalUpdateNamePlatePositions))) {
-        InterlockedIncrement(const_cast<LONG*>(&NameplateHooksInstalled));
-    }
-
-    const BYTE isVisibleExpected[] = { 0x55, 0x8B, 0xEC, 0x83, 0xEC, 0x0C, 0x8B, 0x01, 0x8B, 0x40, 0x20 };
-    if (InstallJumpHook("CGUnit_C::IsVisible", kUnitIsVisible, isVisibleExpected, sizeof(isVisibleExpected),
-        reinterpret_cast<void*>(&UnitIsVisibleHook), reinterpret_cast<void**>(&OriginalUnitIsVisible))) {
         InterlockedIncrement(const_cast<LONG*>(&NameplateHooksInstalled));
     }
 
