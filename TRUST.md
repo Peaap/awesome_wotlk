@@ -9,6 +9,7 @@ This fork is intended to be reviewable by server owners and players before use.
 - `AwesomeWotlkLib.dll`, kept available for upstream feature work after module
   compatibility is reverified
 - addon folders under `Interface/AddOns`
+- `GrimfallMacroLite`, an Ace3-based settings addon for MacroLite controls
 - source-visible build and install scripts
 - `GrimfallWotlkPatch.exe`, built from `src/GrimfallWotlkPatch`
 - `SHA256SUMS.txt` for release-file verification
@@ -70,3 +71,9 @@ This Grimfall WoW build keeps the stable feature set narrow.
 
 That avoids known conflicts with Grimfall WoW's existing runtime hooks through
 `ClientExtensions.DLL`.
+
+## Addon Libraries
+
+`addons/GrimfallMacroLite` embeds Ace3 `Release-r1390` from
+`WoWUIDev/Ace3`. The embedded library license is included at
+`addons/GrimfallMacroLite/Libs/Ace3-LICENSE.txt`.
