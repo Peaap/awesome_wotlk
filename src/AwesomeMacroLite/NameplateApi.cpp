@@ -23,10 +23,10 @@ namespace {
     constexpr uintptr_t kNamePlateDistanceSquared = 0x00ADAA7C;
     constexpr uintptr_t kWorldFrameGlobal = 0x00B7436C;
     constexpr size_t kWorldFrameRenderDirtyFlagsOffset = 0xB10;
-    constexpr size_t kFrameWidthOffset = 0x54;
-    constexpr size_t kFrameHeightOffset = 0x58;
     constexpr size_t kFrameShownOffset = 0xDC;
     constexpr size_t kPlateNdcOffset = 0x2E0;
+    constexpr float kDefaultNameplateWidth = 0.1f;
+    constexpr float kDefaultNameplateHeight = 0.025f;
     constexpr DWORD kStatusLogIntervalMs = 5000;
     constexpr int kMaxTrackedNameplates = 1024;
 
@@ -342,8 +342,8 @@ namespace {
             plates[count].plate = record.plate;
             plates[count].x = ReadFloat(record.plate, kPlateNdcOffset, 0.0f);
             plates[count].y = ReadFloat(record.plate, kPlateNdcOffset + sizeof(float), 0.0f);
-            plates[count].w = ReadFloat(record.plate, kFrameWidthOffset, 0.1f);
-            plates[count].h = ReadFloat(record.plate, kFrameHeightOffset, 0.025f);
+            plates[count].w = kDefaultNameplateWidth;
+            plates[count].h = kDefaultNameplateHeight;
             plates[count].targetY = 0.0f;
             ++count;
         }
