@@ -1,0 +1,319 @@
+#include "NameplateApi.h"
+
+#include "Log.h"
+#include "X86Hook.h"
+
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <windows.h>
+
+namespace AwesomeMacroLite {
+namespace {
+    constexpr uintptr_t kCVarInitialize = 0x007663F0;
+    constexpr uintptr_t kCVarGet = 0x00767460;
+    constexpr uintptr_t kCVarRegister = 0x00767FC0;
+    constexpr uintptr_t kNamePlateInitialize = 0x0098F390;
+    constexpr uintptr_t kHideNamePlate = 0x00725840;
+    constexpr uintptr_t kUpdateNamePlatePositions = 0x00725890;
+    constexpr uintptr_t kNamePlateDistanceSquared = 0x00ADAA7C;
+    constexpr uintptr_t kWorldFrameGlobal = 0x00B7436C;
+    constexpr size_t kWorldFrameRenderDirtyFlagsOffset = 0xB10;
+    constexpr DWORD kStatusLogIntervalMs = 5000;
+    constexpr int kMaxTrackedNameplates = 1024;
+
+    using guid_t = uint64_t;
+    using CVarHandlerFn = int(__cdecl*)(void* cvar, const char* previousValue, const char* newValue, void* userData);
+    using CVarInitializeFn = void(__cdecl*)();
+    using CVarGetFn = void* (__cdecl*)(const char* name);
+    using CVarRegisterFn = void* (__cdecl*)(const char* name, const char* description, unsigned flags, const char* defaultValue,
+        CVarHandlerFn callback, int a6, int a7, int a8, int a9);
+    using NamePlateInitializeFn = int(__thiscall*)(void* plate, void* unit);
+    using HideNamePlateFn = void* (__thiscall*)(void* unit);
+    using UpdateNamePlatePositionsFn = int(__cdecl*)(void* worldFrame);
+
+    struct NamePlateRecord {
+        void* plate;
+        guid_t guid;
+        DWORD lastSeenTick;
+        bool active;
+    };
+
+    auto CVarGet = reinterpret_cast<CVarGetFn>(kCVarGet);
+    auto CVarRegister = reinterpret_cast<CVarRegisterFn>(kCVarRegister);
+
+    CVarInitializeFn OriginalCVarInitialize = nullptr;
+    NamePlateInitializeFn OriginalNamePlateInitialize = nullptr;
+    HideNamePlateFn OriginalHideNamePlate = nullptr;
+    UpdateNamePlatePositionsFn OriginalUpdateNamePlatePositions = nullptr;
+
+    void* CVarNameplateApi = nullptr;
+    void* CVarNameplateDistance = nullptr;
+    void* CVarNameplateStacking = nullptr;
+    void* CVarNameplateClampTop = nullptr;
+    void* CVarNameplateRaiseSpeed = nullptr;
+    void* CVarNameplateLowerSpeed = nullptr;
+    void* CVarNameplatePullDistance = nullptr;
+    void* CVarNameplatePlacement = nullptr;
+    void* CVarNameplateMouseMode = nullptr;
+    void* CVarNameplateBandX = nullptr;
+    void* CVarNameplateBandY = nullptr;
+    void* CVarNameplateHitboxAnchor = nullptr;
+    void* CVarNameplateHitboxWidthE = nullptr;
+    void* CVarNameplateHitboxHeightE = nullptr;
+    void* CVarNameplateHitboxWidthF = nullptr;
+    void* CVarNameplateHitboxHeightF = nullptr;
+    void* CVarNameplatePullSpeed = nullptr;
+    void* CVarNameplateRaiseDistance = nullptr;
+    void* CVarNameplateClampTopOffset = nullptr;
+    void* CVarNameplateOcclusionAlpha = nullptr;
+    void* CVarNameplateNonTargetAlpha = nullptr;
+    void* CVarNameplateAlphaSpeed = nullptr;
+    void* CVarNameplateInertia = nullptr;
+    void* CVarNameplateHysteresisDecay = nullptr;
+
+    volatile LONG NameplateApiEnabled = 1;
+    volatile LONG NameplateDistance = 41;
+    volatile LONG NameplateActiveCount = 0;
+    volatile LONG NameplateCreatedCount = 0;
+    volatile LONG NameplateRemovedCount = 0;
+    volatile LONG NameplateUpdateCount = 0;
+    volatile LONG NameplateHooksInstalled = 0;
+    NamePlateRecord NameplateRecords[kMaxTrackedNameplates] = {};
+    DWORD LastStatusLogTick = 0;
+
+    int ClampInt(int value, int minimum, int maximum) {
+        if (value < minimum) return minimum;
+        if (value > maximum) return maximum;
+        return value;
+    }
+
+    bool StringToBool(const char* value) {
+        if (!value) return false;
+        return value[0] == '1' || value[0] == 'y' || value[0] == 'Y' ||
+            value[0] == 't' || value[0] == 'T';
+    }
+
+    const char* ReadCVarString(void* cvar) {
+        if (!cvar) return nullptr;
+        return *reinterpret_cast<const char**>(static_cast<BYTE*>(cvar) + 0x28);
+    }
+
+    int ReadCVarInt(void* cvar, int fallback, int minimum, int maximum) {
+        const char* value = ReadCVarString(cvar);
+        if (!value) return fallback;
+        return ClampInt(atoi(value), minimum, maximum);
+    }
+
+    int ReadCVarFloatMilli(void* cvar, int fallback, int minimum, int maximum) {
+        const char* value = ReadCVarString(cvar);
+        if (!value) return fallback;
+        return ClampInt(static_cast<int>((atof(value) * 1000.0) + 0.5), minimum, maximum);
+    }
+
+    void* RegisterNameplateCVar(const char* name, const char* defaultValue) {
+        if (void* existing = CVarGet(name)) {
+            return existing;
+        }
+
+        void* cvar = CVarRegister(name, nullptr, 1, defaultValue, nullptr, 0, 0, 0, 0);
+        char line[192];
+        sprintf_s(line, "NamePlateAPI registered CVar name=%s ptr=0x%p default=%s", name, cvar, defaultValue);
+        Log(line);
+        return cvar;
+    }
+
+    void RegisterNameplateCVars() {
+        CVarNameplateApi = RegisterNameplateCVar("grimfallNameplateApi", "1");
+        CVarNameplateStacking = RegisterNameplateCVar("grimfallNameplateStacking", "0");
+        CVarNameplateClampTop = RegisterNameplateCVar("grimfallNameplateClampTop", "0");
+        CVarNameplateDistance = RegisterNameplateCVar("grimfallNameplateDistance", "41");
+        CVarNameplateRaiseSpeed = RegisterNameplateCVar("grimfallNameplateRaiseSpeed", "100");
+        CVarNameplateLowerSpeed = RegisterNameplateCVar("grimfallNameplateLowerSpeed", "100");
+        CVarNameplatePullDistance = RegisterNameplateCVar("grimfallNameplatePullDistance", "0.25");
+        CVarNameplatePlacement = RegisterNameplateCVar("grimfallNameplatePlacement", "0.0");
+        CVarNameplateMouseMode = RegisterNameplateCVar("grimfallNameplateMouseMode", "0");
+        CVarNameplateBandX = RegisterNameplateCVar("grimfallNameplateBandX", "0.7");
+        CVarNameplateBandY = RegisterNameplateCVar("grimfallNameplateBandY", "1.0");
+        CVarNameplateHitboxAnchor = RegisterNameplateCVar("grimfallNameplateHitboxAnchor", "1");
+        CVarNameplateHitboxWidthE = RegisterNameplateCVar("grimfallNameplateHitboxWidthE", "1.0");
+        CVarNameplateHitboxHeightE = RegisterNameplateCVar("grimfallNameplateHitboxHeightE", "1.0");
+        CVarNameplateHitboxWidthF = RegisterNameplateCVar("grimfallNameplateHitboxWidthF", "1.0");
+        CVarNameplateHitboxHeightF = RegisterNameplateCVar("grimfallNameplateHitboxHeightF", "1.0");
+        CVarNameplatePullSpeed = RegisterNameplateCVar("grimfallNameplatePullSpeed", "50");
+        CVarNameplateRaiseDistance = RegisterNameplateCVar("grimfallNameplateRaiseDistance", "8.0");
+        CVarNameplateClampTopOffset = RegisterNameplateCVar("grimfallNameplateClampTopOffset", "0.1");
+        CVarNameplateOcclusionAlpha = RegisterNameplateCVar("grimfallNameplateOcclusionAlpha", "1.0");
+        CVarNameplateNonTargetAlpha = RegisterNameplateCVar("grimfallNameplateNonTargetAlpha", "0.5");
+        CVarNameplateAlphaSpeed = RegisterNameplateCVar("grimfallNameplateAlphaSpeed", "0.25");
+        CVarNameplateInertia = RegisterNameplateCVar("grimfallNameplateInertia", "1.0");
+        CVarNameplateHysteresisDecay = RegisterNameplateCVar("grimfallNameplateHysteresisDecay", "1.0");
+    }
+
+    void DirtyWorldFrame() {
+        void* worldFrame = *reinterpret_cast<void**>(kWorldFrameGlobal);
+        if (!worldFrame) return;
+        auto* flags = reinterpret_cast<uint32_t*>(static_cast<BYTE*>(worldFrame) + kWorldFrameRenderDirtyFlagsOffset);
+        *flags |= 1;
+    }
+
+    void ApplyNameplateDistance(int apiEnabled, int distance) {
+        int effectiveDistance = apiEnabled ? distance : 41;
+        float value = static_cast<float>(effectiveDistance);
+        *reinterpret_cast<float*>(kNamePlateDistanceSquared) = value * value;
+        DirtyWorldFrame();
+    }
+
+    void PollNameplateCVars(bool forceLog = false) {
+        int apiEnabled = StringToBool(ReadCVarString(CVarNameplateApi)) ? 1 : 0;
+        int distance = ReadCVarInt(CVarNameplateDistance, 41, 0, 100);
+        int stacking = ReadCVarInt(CVarNameplateStacking, 0, 0, 3);
+        int clampTop = ReadCVarInt(CVarNameplateClampTop, 0, 0, 2);
+        int raiseSpeed = ReadCVarInt(CVarNameplateRaiseSpeed, 100, 1, 250);
+        int lowerSpeed = ReadCVarInt(CVarNameplateLowerSpeed, 100, 1, 250);
+        int pullDistance = ReadCVarFloatMilli(CVarNameplatePullDistance, 250, 0, 2000);
+        int placement = ReadCVarFloatMilli(CVarNameplatePlacement, 0, -1000, 2000);
+
+        LONG oldApi = InterlockedExchange(const_cast<LONG*>(&NameplateApiEnabled), apiEnabled);
+        LONG oldDistance = InterlockedExchange(const_cast<LONG*>(&NameplateDistance), distance);
+        if (forceLog || oldApi != apiEnabled || oldDistance != distance) {
+            ApplyNameplateDistance(apiEnabled, distance);
+        }
+
+        if (forceLog || oldApi != apiEnabled || oldDistance != distance) {
+            char line[320];
+            sprintf_s(line,
+                "NamePlateAPI CVar poll api=%d distance=%d stacking=%d clampTop=%d raiseSpeed=%d lowerSpeed=%d pullMilli=%d placementMilli=%d",
+                apiEnabled, distance, stacking, clampTop, raiseSpeed, lowerSpeed, pullDistance, placement);
+            Log(line);
+        }
+    }
+
+    guid_t ReadNamePlateGuid(void* plate) {
+        if (!plate) return 0;
+        return *reinterpret_cast<guid_t*>(static_cast<BYTE*>(plate) + 0x2A8);
+    }
+
+    void* ReadUnitNamePlate(void* unit) {
+        if (!unit) return nullptr;
+        return *reinterpret_cast<void**>(static_cast<BYTE*>(unit) + 0xC38);
+    }
+
+    void TrackNamePlateCreated(void* plate, guid_t guid) {
+        if (!plate) return;
+
+        DWORD now = GetTickCount();
+        int freeIndex = -1;
+        for (int i = 0; i < kMaxTrackedNameplates; ++i) {
+            NamePlateRecord& record = NameplateRecords[i];
+            if (record.plate == plate) {
+                if (!record.active) {
+                    InterlockedIncrement(const_cast<LONG*>(&NameplateActiveCount));
+                    InterlockedIncrement(const_cast<LONG*>(&NameplateCreatedCount));
+                }
+                record.guid = guid;
+                record.lastSeenTick = now;
+                record.active = true;
+                return;
+            }
+            if (freeIndex < 0 && !record.active && !record.plate) {
+                freeIndex = i;
+            }
+        }
+
+        if (freeIndex >= 0) {
+            NameplateRecords[freeIndex] = { plate, guid, now, true };
+            InterlockedIncrement(const_cast<LONG*>(&NameplateActiveCount));
+            InterlockedIncrement(const_cast<LONG*>(&NameplateCreatedCount));
+        }
+    }
+
+    void TrackNamePlateRemoved(void* plate) {
+        if (!plate) return;
+
+        for (int i = 0; i < kMaxTrackedNameplates; ++i) {
+            NamePlateRecord& record = NameplateRecords[i];
+            if (record.plate == plate && record.active) {
+                record.active = false;
+                record.lastSeenTick = GetTickCount();
+                InterlockedDecrement(const_cast<LONG*>(&NameplateActiveCount));
+                InterlockedIncrement(const_cast<LONG*>(&NameplateRemovedCount));
+                return;
+            }
+        }
+    }
+
+    void LogNameplateStatusIfNeeded() {
+        DWORD now = GetTickCount();
+        if (LastStatusLogTick != 0 && now - LastStatusLogTick < kStatusLogIntervalMs) {
+            return;
+        }
+        LastStatusLogTick = now;
+
+        char line[192];
+        sprintf_s(line, "NamePlateAPI status active=%ld created=%ld removed=%ld updates=%ld hooks=%ld",
+            InterlockedCompareExchange(const_cast<LONG*>(&NameplateActiveCount), 0, 0),
+            InterlockedCompareExchange(const_cast<LONG*>(&NameplateCreatedCount), 0, 0),
+            InterlockedCompareExchange(const_cast<LONG*>(&NameplateRemovedCount), 0, 0),
+            InterlockedCompareExchange(const_cast<LONG*>(&NameplateUpdateCount), 0, 0),
+            InterlockedCompareExchange(const_cast<LONG*>(&NameplateHooksInstalled), 0, 0));
+        Log(line);
+    }
+
+    void __cdecl CVarInitializeHook() {
+        OriginalCVarInitialize();
+        RegisterNameplateCVars();
+        PollNameplateCVars(true);
+        Log("NamePlateAPI CVar registration completed");
+    }
+
+    int __fastcall NamePlateInitializeHook(void* plate, void*, void* unit) {
+        int result = OriginalNamePlateInitialize(plate, unit);
+        guid_t guid = ReadNamePlateGuid(plate);
+        TrackNamePlateCreated(plate, guid);
+        return result;
+    }
+
+    void* __fastcall HideNamePlateHook(void* unit, void*) {
+        void* plate = ReadUnitNamePlate(unit);
+        void* result = OriginalHideNamePlate(unit);
+        TrackNamePlateRemoved(plate);
+        return result;
+    }
+
+    int __cdecl UpdateNamePlatePositionsHook(void* worldFrame) {
+        InterlockedIncrement(const_cast<LONG*>(&NameplateUpdateCount));
+        PollNameplateCVars();
+        int result = OriginalUpdateNamePlatePositions(worldFrame);
+        LogNameplateStatusIfNeeded();
+        return result;
+    }
+}
+
+void InstallNameplateApiHooks() {
+    const BYTE cvarInitializeExpected[] = { 0xC6, 0x05, 0xFA, 0x19, 0xCA, 0x00, 0x01, 0xC3 };
+    if (InstallJumpHook("CVar::Initialize", kCVarInitialize, cvarInitializeExpected, sizeof(cvarInitializeExpected),
+        reinterpret_cast<void*>(&CVarInitializeHook), reinterpret_cast<void**>(&OriginalCVarInitialize))) {
+        InterlockedIncrement(const_cast<LONG*>(&NameplateHooksInstalled));
+    }
+
+    const BYTE updateExpected[] = { 0x55, 0x8B, 0xEC, 0x83, 0xEC, 0x18, 0x53, 0x8B, 0x1D, 0x88, 0xAA, 0xAD, 0x00 };
+    if (InstallJumpHook("UpdateNamePlatePositions", kUpdateNamePlatePositions, updateExpected, sizeof(updateExpected),
+        reinterpret_cast<void*>(&UpdateNamePlatePositionsHook), reinterpret_cast<void**>(&OriginalUpdateNamePlatePositions))) {
+        InterlockedIncrement(const_cast<LONG*>(&NameplateHooksInstalled));
+    }
+
+    const BYTE initializeExpected[] = { 0x55, 0x8B, 0xEC, 0x83, 0xEC, 0x0C, 0x53, 0x8B, 0x5D, 0x08 };
+    if (InstallJumpHook("NamePlateInitialize", kNamePlateInitialize, initializeExpected, sizeof(initializeExpected),
+        reinterpret_cast<void*>(&NamePlateInitializeHook), reinterpret_cast<void**>(&OriginalNamePlateInitialize))) {
+        InterlockedIncrement(const_cast<LONG*>(&NameplateHooksInstalled));
+    }
+
+    const BYTE hideExpected[] = { 0x56, 0x8B, 0xF1, 0x8B, 0x86, 0x38, 0x0C, 0x00, 0x00 };
+    if (InstallJumpHook("HideNamePlate", kHideNamePlate, hideExpected, sizeof(hideExpected),
+        reinterpret_cast<void*>(&HideNamePlateHook), reinterpret_cast<void**>(&OriginalHideNamePlate))) {
+        InterlockedIncrement(const_cast<LONG*>(&NameplateHooksInstalled));
+    }
+}
+}

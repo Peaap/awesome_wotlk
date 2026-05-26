@@ -6,8 +6,8 @@ which already loads `Data\Extensions\ClientExtensions.DLL`.
 The full Awesome WotLK DLL is feature-rich, but it currently collides with the
 Grimfall WoW client after login in ways that are not isolated to one
 user-facing feature.
-MacroLite keeps the proven macro-conditional behavior and removes the rest of
-the hook surface.
+MacroLite keeps the proven Grimfall behavior and splits newer features into
+small modules instead of loading the full upstream hook surface at once.
 
 ## What It Does
 
@@ -35,6 +35,10 @@ The terrain hook then submits the ground-target position:
 Armed macro-target flags are cleared after a successful terrain click or after
 a short timeout, so a canceled/failed cast cannot leave a stale target active.
 
+The current Grimfall target also registers nameplate CVars after the client CVar
+initialization path runs. Nameplate code is isolated in
+`src/AwesomeMacroLite/NameplateApi.cpp`.
+
 ## Module Layout
 
 - `Entry.cpp`: DLL startup and hook initialization order.
@@ -44,6 +48,7 @@ a short timeout, so a canceled/failed cast cannot leave a stale target active.
 - `GameClientLite.h`: minimal Grimfall/WotLK addresses and client structs.
 - `MacroParser.cpp`: `SecureCmdOptionParse` rewrite for macro targets.
 - `MacroTargetState.cpp`: armed `cursor` / `playerlocation` state and timeout cleanup.
+- `NameplateApi.cpp`: Grimfall nameplate CVars, distance application, and lifecycle logging.
 - `SpellStanceFix.cpp`: SlimDetours-backed stance/form byte update after successful form casts.
 - `TerrainTargeting.cpp`: terrain submit hook for ground-target casts.
 
@@ -55,7 +60,7 @@ MacroLite intentionally does not include:
 - D3D or renderer hooks
 - camera hooks
 - voice or text-to-speech hooks
-- nameplate hooks
+- full upstream nameplate layout replacement
 - addon communication bridge hooks
 - full miscellaneous interaction hooks
 

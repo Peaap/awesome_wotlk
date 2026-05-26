@@ -3,10 +3,11 @@
 This fork keeps the upstream Awesome WotLK code available, but the currently
 recommended Grimfall WoW path is the small `AwesomeMacroLite.dll` target.
 
-`AwesomeMacroLite.dll` implements the macro conditional path needed for
-`[@cursor]` and `[@playerlocation]`. It patches the secure macro parser and the
-small terrain-submit path required for ground-target spells, while avoiding the
-full renderer, camera, voice, nameplate, and addon-bridge hook surface.
+`AwesomeMacroLite.dll` implements the Grimfall-tested feature path. It patches
+the secure macro parser and terrain-submit path for ground-target spells,
+includes Spell stance support, and registers the modular Nameplate API CVars
+while avoiding the full renderer, camera, voice, MSDF, and broad interaction
+hook surface.
 
 ## Current Safe Target
 
@@ -15,7 +16,8 @@ full renderer, camera, voice, nameplate, and addon-bridge hook surface.
 - Installed DLL: `%WOW_ROOT%\AwesomeMacroLite.dll`
 - Runtime log: `%WOW_ROOT%\_mpq_tools\reports\macro_lite\awesome_macro_lite.log`
 - Required client: Grimfall WoW, based on 32-bit WotLK 3.3.5a build 12340
-- Current feature: `[@cursor]` and `[@playerlocation]` ground-target macro casts
+- Current features: `[@cursor]` and `[@playerlocation]` ground-target macro
+  casts, Spell stance support, and modular Nameplate API CVars
 
 Build and install:
 
@@ -43,7 +45,7 @@ This fork should stay source-readable:
 - no packed binary loader
 - source-visible Grimfall patcher
 - SHA-256 printed after local build/install
-- small macro-only DLL for the current Grimfall WoW compatibility path
+- small Grimfall-specific DLL for the current compatibility path
 - expected-byte checks before patching client code
 - generated build/dependency output excluded from git
 - full Awesome WotLK library kept separate until each module is reverified

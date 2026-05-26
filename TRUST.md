@@ -5,7 +5,7 @@ This fork is intended to be reviewable by server owners and players before use.
 ## What The Release Contains
 
 - `AwesomeMacroLite.dll`, built from this repository for the current Grimfall
-  WoW macro conditional path
+  WoW compatibility path
 - `AwesomeWotlkLib.dll`, kept available for upstream feature work after module
   compatibility is reverified
 - addon folders under `Interface/AddOns`
@@ -25,7 +25,7 @@ installing hooks.
 
 `AwesomeMacroLite.dll`:
 
-- is built from `src/AwesomeMacroLite/Entry.cpp`
+- is built from `src/AwesomeMacroLite`
 - imports only `KERNEL32.dll` and `ntdll.dll` in the current macro build
 - waits for `ClientExtensions.DLL` before installing hooks
 - uses one manual x86 trampoline at `SecureCmdOptionParse`
@@ -34,13 +34,13 @@ installing hooks.
   relative call that the simple x86 trampoline cannot relocate
 - verifies the expected hook bytes before patching memory
 - clears armed macro-target flags after a short timeout or successful terrain click
-- logs startup, hook install, rewrite/click events, timeout cleanup, and hook-byte mismatches
+- logs startup, hook install, rewrite/click events, CVar polling, timeout cleanup, and hook-byte mismatches
 - does not enable renderer hooks, camera hooks, voice hooks,
-  nameplate hooks, or the addon bridge
+  MSDF hooks, or the full upstream miscellaneous interaction module
 
-The hook surface is intentionally small: it lets `cursor` and `playerlocation`
-survive `SecureCmdOptionParse`, then submits the terrain position needed by
-ground-target spells without enabling the rest of the full Awesome feature set.
+The hook surface is intentionally modular: macro conditionals, Spell, terrain
+targeting, and Nameplate API work live in the Grimfall target without enabling
+the rest of the full Awesome feature set.
 The `ntdll.dll` import comes from the SlimDetours-backed spell hook.
 
 ## Local Verification
@@ -66,7 +66,8 @@ GrimfallWotlkPatch.exe --unpatch C:\Path\To\Grimfall-WoW\Wow.exe
 
 This Grimfall WoW build keeps the stable feature set narrow.
 
-- enabled: macro conditional ground-target casts for `cursor` and `playerlocation`
+- enabled: macro conditional ground-target casts for `cursor` and
+  `playerlocation`, Spell stance support, and modular Nameplate API CVars
 - disabled: full Awesome modules until each one is isolated and reverified
 
 That avoids known conflicts with Grimfall WoW's existing runtime hooks through
