@@ -1,0 +1,79 @@
+# AwesomeMacroLite
+
+`AwesomeMacroLite.dll` is the narrow compatibility target for Grimfall WoW,
+which already loads `Data\Extensions\ClientExtensions.DLL`.
+
+The full Awesome WotLK DLL is feature-rich, but it currently collides with the
+Grimfall WoW client after login in ways that are not isolated to one
+user-facing feature.
+MacroLite keeps the proven macro-conditional behavior and removes the rest of
+the hook surface.
+
+## What It Does
+
+MacroLite installs one manual x86 trampoline at:
+
+```text
+SecureCmdOptionParse = 0x00564AE0
+expected bytes       = 55 8B EC 83 EC 10
+patch size           = 6
+```
+
+After the original parser runs, it checks the Lua return stack. When the parsed
+target is `cursor` or `playerlocation`, it rewrites the return values so the
+client accepts the target conditional instead of rejecting it.
+
+## What It Avoids
+
+MacroLite intentionally does not include:
+
+- Detours
+- D3D or renderer hooks
+- camera hooks
+- voice or text-to-speech hooks
+- nameplate hooks
+- addon communication bridge hooks
+- full miscellaneous interaction hooks
+
+The DLL links only against `KERNEL32.dll`.
+
+## Build
+
+Use a 32-bit MSVC environment. Pass your WoW folder explicitly or set
+`WOW_ROOT` first:
+
+```bat
+build_install_macro_lite_x86.bat C:\Games\Grimfall-WoW
+```
+
+The script configures `build-codex-x86` when needed, builds the
+`AwesomeMacroLite` target, copies it to `%WOW_ROOT%\AwesomeMacroLite.dll`, and
+prints the installed file hash.
+
+To build without installing:
+
+```bat
+build_macro_lite_x86.bat
+```
+
+## Runtime
+
+Use the local tandem loader so `ClientExtensions.DLL` is present before
+MacroLite installs its hook:
+
+```bat
+%WOW_ROOT%\_mpq_tools\launchers\start_wow_load_macro_lite_with_clientextensions.bat
+```
+
+Expected log lines:
+
+```text
+DllMain DLL_PROCESS_ATTACH
+InitThread begin
+InitThread after sleep
+SecureCmdOptionParse manual hook installed ...
+SecureCmdOptionParseHook rewriting target ...
+```
+
+The rewrite log is rate-limited so normal gameplay does not produce a large
+passthrough trace.
