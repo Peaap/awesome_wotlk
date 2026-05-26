@@ -1,6 +1,7 @@
 #include "NameplateApi.h"
 
 #include "Log.h"
+#include "UnitApiLite.h"
 #include "X86Hook.h"
 
 #include <stdint.h>
@@ -276,6 +277,37 @@ namespace {
         int result = OriginalNamePlateInitialize(plate, unit);
         guid_t guid = ReadNamePlateGuid(plate);
         TrackNamePlateCreated(plate, guid);
+
+        LONG created = InterlockedCompareExchange(const_cast<LONG*>(&NameplateCreatedCount), 0, 0);
+        if (created <= 25 || (created % 100) == 0) {
+            UnitInfoLite info = {};
+            char line[320];
+            if (TryGetUnitInfo(unit, info)) {
+                sprintf_s(line,
+                    "NamePlateAPI created plate=0x%p unit=0x%p guid=0x%08X%08X rank=%d reaction=%d enemy=%d friendly=%d flags=0x%08X npcFlags=0x%08X active=%ld",
+                    plate,
+                    unit,
+                    static_cast<unsigned>(info.guid >> 32),
+                    static_cast<unsigned>(info.guid & 0xFFFFFFFF),
+                    info.rank,
+                    info.reaction,
+                    info.enemy ? 1 : 0,
+                    info.friendly ? 1 : 0,
+                    info.flags,
+                    info.npcFlags,
+                    InterlockedCompareExchange(const_cast<LONG*>(&NameplateActiveCount), 0, 0));
+            }
+            else {
+                sprintf_s(line,
+                    "NamePlateAPI created plate=0x%p unit=0x%p guid=0x%08X%08X unitInfo=unavailable active=%ld",
+                    plate,
+                    unit,
+                    static_cast<unsigned>(guid >> 32),
+                    static_cast<unsigned>(guid & 0xFFFFFFFF),
+                    InterlockedCompareExchange(const_cast<LONG*>(&NameplateActiveCount), 0, 0));
+            }
+            Log(line);
+        }
         return result;
     }
 

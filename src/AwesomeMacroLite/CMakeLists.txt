@@ -10,6 +10,8 @@ add_library(${PROJECT_NAME} SHARED
     "SlimHook.cpp"
     "SpellStanceFix.cpp"
     "TerrainTargeting.cpp"
+    "UnitApiLite.cpp"
+    "UnitApiLite.h"
     "X86Hook.cpp"
 )
 

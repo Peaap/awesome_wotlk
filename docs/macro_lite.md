@@ -56,6 +56,8 @@ distance application, and lifecycle/update logging.
   lifecycle logging.
 - `SpellStanceFix.cpp`: SlimDetours-backed stance/form byte update after successful form casts.
 - `TerrainTargeting.cpp`: terrain submit hook for ground-target casts.
+- `UnitApiLite.cpp`: read-only unit metadata helpers used by nameplate
+  lifecycle logging and future stacking classification.
 
 ## What It Avoids
 
