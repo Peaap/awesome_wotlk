@@ -1,6 +1,5 @@
 #include "Log.h"
 #include "MacroParser.h"
-#include "StanceFormFix.h"
 #include "TerrainTargeting.h"
 
 #include <windows.h>
@@ -32,7 +31,6 @@ namespace {
 
         AwesomeMacroLite::InstallMacroParserHook();
         AwesomeMacroLite::InstallTerrainTargetingHook();
-        AwesomeMacroLite::InstallStanceFormFixHook();
         return 0;
     }
 }

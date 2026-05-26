@@ -21,10 +21,6 @@ patch size           = 6
 OnLayerTrackTerrain  = 0x004F66C0
 expected bytes       = 55 8B EC 81 EC A4 00 00 00
 patch size           = 9
-
-SpellOnCast          = 0x0080DA40
-expected bytes       = 55 8B EC E8 48 5D CC FF
-patch size           = 8
 ```
 
 After the original parser runs, it checks the Lua return stack. When the parsed
@@ -39,10 +35,6 @@ The terrain hook then submits the ground-target position:
 Armed macro-target flags are cleared after a successful terrain click or after
 a short timeout, so a canceled/failed cast cannot leave a stale target active.
 
-The stance/form fix updates the local player shapeshift byte immediately after a
-successful stance/form spell cast. That lets the next macro command see the new
-form without waiting for the later server/client state update.
-
 ## Module Layout
 
 - `Entry.cpp`: DLL startup and hook initialization order.
@@ -51,7 +43,6 @@ form without waiting for the later server/client state update.
 - `GameClientLite.h`: minimal Grimfall/WotLK addresses and client structs.
 - `MacroParser.cpp`: `SecureCmdOptionParse` rewrite for macro targets.
 - `MacroTargetState.cpp`: armed `cursor` / `playerlocation` state and timeout cleanup.
-- `StanceFormFix.cpp`: stance/form cast state update.
 - `TerrainTargeting.cpp`: terrain submit hook for ground-target casts.
 
 ## What It Avoids
@@ -109,11 +100,9 @@ InitThread begin
 ClientExtensions.DLL detected
 SecureCmdOptionParse manual hook installed ...
 OnLayerTrackTerrain manual hook installed ...
-SpellOnCast manual hook installed ...
 SecureCmdOptionParseHook rewriting target ...
 OnLayerTrackTerrainHook cursor click ...
 Macro target flags cleared reason=cursor-click ...
-StanceFormFix updated form ...
 ```
 
 The rewrite log is rate-limited so normal gameplay does not produce a large
