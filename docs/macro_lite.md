@@ -80,19 +80,24 @@ build_macro_lite_x86.bat
 
 ## Runtime
 
-Use the local tandem loader so `ClientExtensions.DLL` is present before
-MacroLite installs its hook:
+For direct `Wow.exe` launches, use the source-visible Grimfall patcher:
 
 ```bat
-%WOW_ROOT%\_mpq_tools\launchers\start_wow_load_macro_lite_with_clientextensions.bat
+build_grimfall_patch_x86.bat
+build\Release\GrimfallWotlkPatch.exe C:\Games\Grimfall-WoW\Wow.exe
 ```
+
+The patcher modifies `Wow.exe` to load `AwesomeMacroLite.dll` through the
+client's internal DLL loader. MacroLite then waits for `ClientExtensions.DLL`
+before installing hooks, preserving the stable tandem order without a `.bat`
+launcher.
 
 Expected log lines:
 
 ```text
 DllMain DLL_PROCESS_ATTACH
 InitThread begin
-InitThread after sleep
+ClientExtensions.DLL detected
 SecureCmdOptionParse manual hook installed ...
 OnLayerTrackTerrain manual hook installed ...
 SecureCmdOptionParseHook rewriting target ...

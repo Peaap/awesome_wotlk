@@ -5,10 +5,29 @@
 #include <windows.h>
 
 namespace {
+    bool WaitForClientExtensions() {
+        constexpr DWORD kWaitTimeoutMs = 30000;
+        constexpr DWORD kWaitStepMs = 250;
+
+        DWORD waitedMs = 0;
+        while (waitedMs <= kWaitTimeoutMs) {
+            if (GetModuleHandleW(L"ClientExtensions.DLL") ||
+                GetModuleHandleW(L"clientextensions.dll")) {
+                AwesomeMacroLite::Log("ClientExtensions.DLL detected");
+                return true;
+            }
+
+            Sleep(kWaitStepMs);
+            waitedMs += kWaitStepMs;
+        }
+
+        AwesomeMacroLite::Log("ClientExtensions.DLL wait timed out; installing MacroLite hooks anyway");
+        return false;
+    }
+
     DWORD WINAPI InitThread(LPVOID) {
         AwesomeMacroLite::Log("InitThread begin");
-        Sleep(1000);
-        AwesomeMacroLite::Log("InitThread after sleep");
+        WaitForClientExtensions();
 
         AwesomeMacroLite::InstallMacroParserHook();
         AwesomeMacroLite::InstallTerrainTargetingHook();

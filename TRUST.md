@@ -10,11 +10,14 @@ This fork is intended to be reviewable by server owners and players before use.
   compatibility is reverified
 - addon folders under `Interface/AddOns`
 - source-visible build and install scripts
+- `GrimfallWotlkPatch.exe`, built from `src/GrimfallWotlkPatch`
 - `SHA256SUMS.txt` for release-file verification
 
 The release package does not need a closed or packed patch executable. The
-current MacroLite path does not patch `Wow.exe`; it is loaded by the local
-tandem loader after Grimfall WoW's `ClientExtensions.DLL` is present.
+Grimfall patcher is source-visible, verifies expected bytes before writing, and
+creates a `Wow.exe.grimfall-awesome.bak` backup before applying the patch.
+MacroLite still waits for Grimfall WoW's `ClientExtensions.DLL` before
+installing hooks.
 
 ## MacroLite Guarantees
 
@@ -22,6 +25,7 @@ tandem loader after Grimfall WoW's `ClientExtensions.DLL` is present.
 
 - is built from `src/AwesomeMacroLite/Entry.cpp`
 - imports only `KERNEL32.dll`
+- waits for `ClientExtensions.DLL` before installing hooks
 - uses one manual x86 trampoline at `SecureCmdOptionParse`
 - uses one manual x86 trampoline at `CGWorldFrame::OnLayerTrackTerrain`
 - verifies the expected hook bytes before patching memory
@@ -38,14 +42,17 @@ ground-target spells without enabling the rest of the full Awesome feature set.
 
 ```powershell
 .\build_install_macro_lite_x86.bat C:\Path\To\Grimfall-WoW
+.\build_grimfall_patch_x86.bat
+.\build\Release\GrimfallWotlkPatch.exe C:\Path\To\Grimfall-WoW\Wow.exe
 dumpbin /dependents %WOW_ROOT%\AwesomeMacroLite.dll
 Get-FileHash -Algorithm SHA256 %WOW_ROOT%\AwesomeMacroLite.dll
 ```
 
-Run with:
+Patcher utilities:
 
 ```text
-%WOW_ROOT%\_mpq_tools\launchers\start_wow_load_macro_lite_with_clientextensions.bat
+GrimfallWotlkPatch.exe --status C:\Path\To\Grimfall-WoW\Wow.exe
+GrimfallWotlkPatch.exe --unpatch C:\Path\To\Grimfall-WoW\Wow.exe
 ```
 
 ## Current Compatibility Build

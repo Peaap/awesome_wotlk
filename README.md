@@ -23,18 +23,22 @@ Build and install:
 build_install_macro_lite_x86.bat C:\Games\Grimfall-WoW
 ```
 
-Run with the tandem loader from the local tool folder:
+For direct `Wow.exe` launches, build and run the Grimfall patcher:
 
 ```bat
-%WOW_ROOT%\_mpq_tools\launchers\start_wow_load_macro_lite_with_clientextensions.bat
+build_grimfall_patch_x86.bat
+build\Release\GrimfallWotlkPatch.exe C:\Games\Grimfall-WoW\Wow.exe
 ```
+
+After patching, `Wow.exe` loads `AwesomeMacroLite.dll` directly. MacroLite still
+waits for Grimfall's `ClientExtensions.DLL` before installing hooks.
 
 ## Trust Model
 
 This fork should stay source-readable:
 
 - no packed binary loader
-- no hidden exe patcher
+- source-visible Grimfall patcher
 - SHA-256 printed after local build/install
 - small macro-only DLL for the current Grimfall WoW compatibility path
 - expected-byte checks before patching client code
