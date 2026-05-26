@@ -53,3 +53,11 @@ The Grimfall-specific MacroLite target is split into small reviewable modules
 under `src/AwesomeMacroLite` instead of one large source file. Each feature
 area owns its own hook, state, or utility code so future ports can stay
 isolated.
+
+## Hook Backend
+
+The stable macro path still uses the existing small x86 hooks. KNSoft
+SlimDetours `v1.2.1-beta` is vendored under `deps/KNSoft.SlimDetours` with the
+matching KNSoft.NDK `1.2.50-beta` headers under `deps/KNSoft.NDK` for new
+or reverified hooks that need relocated trampolines, such as functions whose
+first bytes include relative `call` or `jmp` instructions.

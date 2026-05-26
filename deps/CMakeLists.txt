@@ -1,4 +1,5 @@
 add_subdirectory(Detours)
+add_subdirectory(KNSoft.SlimDetours)
 set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
 set(FT_DISABLE_ZLIB ON CACHE BOOL "" FORCE)
 set(FT_DISABLE_PNG ON CACHE BOOL "" FORCE)

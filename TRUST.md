@@ -24,19 +24,23 @@ installing hooks.
 `AwesomeMacroLite.dll`:
 
 - is built from `src/AwesomeMacroLite/Entry.cpp`
-- imports only `KERNEL32.dll`
+- imports only `KERNEL32.dll` in the current stable macro build
 - waits for `ClientExtensions.DLL` before installing hooks
 - uses one manual x86 trampoline at `SecureCmdOptionParse`
 - uses one manual x86 trampoline at `CGWorldFrame::OnLayerTrackTerrain`
+- includes KNSoft.SlimDetours as a pinned, vendored hook backend for future
+  hooks whose prologues contain relative calls or jumps
 - verifies the expected hook bytes before patching memory
 - clears armed macro-target flags after a short timeout or successful terrain click
 - logs startup, hook install, rewrite/click events, timeout cleanup, and hook-byte mismatches
-- does not include Detours, renderer hooks, camera hooks, voice hooks,
+- does not enable renderer hooks, camera hooks, voice hooks,
   nameplate hooks, or the addon bridge
 
 The hook surface is intentionally small: it lets `cursor` and `playerlocation`
 survive `SecureCmdOptionParse`, then submits the terrain position needed by
 ground-target spells without enabling the rest of the full Awesome feature set.
+When a future feature actually uses the SlimDetours backend, the DLL may also
+import `ntdll.dll`.
 
 ## Local Verification
 

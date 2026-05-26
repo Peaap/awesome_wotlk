@@ -39,6 +39,7 @@ a short timeout, so a canceled/failed cast cannot leave a stale target active.
 
 - `Entry.cpp`: DLL startup and hook initialization order.
 - `Log.cpp`: runtime log path resolution and file logging.
+- `SlimHook.cpp`: KNSoft SlimDetours wrapper for future relocated trampolines.
 - `X86Hook.cpp`: expected-byte checks, trampoline allocation, and jump patching.
 - `GameClientLite.h`: minimal Grimfall/WotLK addresses and client structs.
 - `MacroParser.cpp`: `SecureCmdOptionParse` rewrite for macro targets.
@@ -49,7 +50,7 @@ a short timeout, so a canceled/failed cast cannot leave a stale target active.
 
 MacroLite intentionally does not include:
 
-- Detours
+- enabled Detours/SlimDetours hooks in the stable macro path
 - D3D or renderer hooks
 - camera hooks
 - voice or text-to-speech hooks
@@ -57,7 +58,8 @@ MacroLite intentionally does not include:
 - addon communication bridge hooks
 - full miscellaneous interaction hooks
 
-The DLL links only against `KERNEL32.dll`.
+The current stable macro DLL imports only `KERNEL32.dll`. Future hooks that
+actually use the SlimDetours backend may add `ntdll.dll`.
 
 ## Build
 

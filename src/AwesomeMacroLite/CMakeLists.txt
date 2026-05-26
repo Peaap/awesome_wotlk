@@ -5,6 +5,7 @@ add_library(${PROJECT_NAME} SHARED
     "Log.cpp"
     "MacroParser.cpp"
     "MacroTargetState.cpp"
+    "SlimHook.cpp"
     "TerrainTargeting.cpp"
     "X86Hook.cpp"
 )
@@ -14,5 +15,6 @@ target_compile_definitions(${PROJECT_NAME} PRIVATE
 )
 
 target_link_libraries(${PROJECT_NAME} PRIVATE
+    KNSoft.SlimDetours
     kernel32
 )
