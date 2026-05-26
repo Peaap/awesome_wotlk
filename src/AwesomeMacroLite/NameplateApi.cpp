@@ -20,6 +20,8 @@ namespace {
     constexpr uintptr_t kUpdateNamePlatePositions = 0x00725890;
     constexpr uintptr_t kUpdateNamePlatePositionsSite = 0x004F90E2;
     constexpr uintptr_t kUpdateNamePlatePositionsSiteJumpBack = 0x004F90EC;
+    constexpr uintptr_t kUpdateNamePlateSetPointArgsSite = 0x007258FC;
+    constexpr uintptr_t kUpdateNamePlateSetPointArgsJumpBack = 0x00725904;
     constexpr uintptr_t kNamePlateDistanceSquared = 0x00ADAA7C;
     constexpr uintptr_t kWorldFrameGlobal = 0x00B7436C;
     constexpr size_t kWorldFrameRenderDirtyFlagsOffset = 0xB10;
@@ -59,6 +61,7 @@ namespace {
     void* CVarNameplatePositioning = nullptr;
     void* CVarNameplateDistance = nullptr;
     void* CVarNameplateStacking = nullptr;
+    void* CVarNameplateStackingPatchApply = nullptr;
     void* CVarNameplateClampTop = nullptr;
     void* CVarNameplateRaiseSpeed = nullptr;
     void* CVarNameplateLowerSpeed = nullptr;
@@ -83,6 +86,7 @@ namespace {
 
     volatile LONG NameplateApiEnabled = 1;
     volatile LONG NameplateStackingMode = 0;
+    volatile LONG NameplateStackingPatchApply = 0;
     volatile LONG NameplateBandXMilli = 700;
     volatile LONG NameplateBandYMilli = 1000;
     volatile LONG NameplateRaiseDistanceMilli = 8000;
@@ -97,6 +101,7 @@ namespace {
     NamePlateRecord NameplateRecords[kMaxTrackedNameplates] = {};
     DWORD LastStatusLogTick = 0;
     DWORD LastStackingCalcLogTick = 0;
+    void* OriginalUpdateNamePlateSetPointArgsSite = nullptr;
 
     int ClampInt(int value, int minimum, int maximum) {
         if (value < minimum) return minimum;
@@ -173,6 +178,7 @@ namespace {
         CVarNameplateApi = RegisterNameplateCVar("grimfallNameplateApi", "1");
         CVarNameplatePositioning = RegisterNameplateCVar("grimfallNameplatePositioning", "0");
         CVarNameplateStacking = RegisterNameplateCVar("grimfallNameplateStacking", "0");
+        CVarNameplateStackingPatchApply = RegisterNameplateCVar("grimfallNameplateStackingPatchApply", "0");
         CVarNameplateClampTop = RegisterNameplateCVar("grimfallNameplateClampTop", "0");
         CVarNameplateDistance = RegisterNameplateCVar("grimfallNameplateDistance", "41");
         CVarNameplateRaiseSpeed = RegisterNameplateCVar("grimfallNameplateRaiseSpeed", "100");
@@ -227,6 +233,7 @@ namespace {
         int positioningEnabled = StringToBool(ReadCVarString(CVarNameplatePositioning)) ? 1 : 0;
         int distance = ReadCVarInt(CVarNameplateDistance, 41, 0, 100);
         int stacking = ReadCVarInt(CVarNameplateStacking, 0, 0, 3);
+        int patchApply = StringToBool(ReadCVarString(CVarNameplateStackingPatchApply)) ? 1 : 0;
         int clampTop = ReadCVarInt(CVarNameplateClampTop, 0, 0, 2);
         int raiseSpeed = ReadCVarInt(CVarNameplateRaiseSpeed, 100, 1, 250);
         int lowerSpeed = ReadCVarInt(CVarNameplateLowerSpeed, 100, 1, 250);
@@ -238,6 +245,7 @@ namespace {
 
         LONG oldApi = InterlockedExchange(const_cast<LONG*>(&NameplateApiEnabled), apiEnabled);
         LONG oldStacking = InterlockedExchange(const_cast<LONG*>(&NameplateStackingMode), stacking);
+        LONG oldPatchApply = InterlockedExchange(const_cast<LONG*>(&NameplateStackingPatchApply), patchApply);
         InterlockedExchange(const_cast<LONG*>(&NameplateBandXMilli), bandX);
         InterlockedExchange(const_cast<LONG*>(&NameplateBandYMilli), bandY);
         InterlockedExchange(const_cast<LONG*>(&NameplateRaiseDistanceMilli), raiseDistance);
@@ -247,11 +255,11 @@ namespace {
             ApplyNameplateDistance(apiEnabled, distance);
         }
 
-        if (forceLog || oldApi != apiEnabled || oldStacking != stacking || oldDistance != distance || oldPlacement != placement) {
+        if (forceLog || oldApi != apiEnabled || oldStacking != stacking || oldPatchApply != patchApply || oldDistance != distance || oldPlacement != placement) {
             char line[320];
             sprintf_s(line,
-                "NamePlateAPI CVar poll api=%d positioning=%d distance=%d stacking=%d clampTop=%d raiseSpeed=%d lowerSpeed=%d pullMilli=%d placementMilli=%d",
-                apiEnabled, positioningEnabled, distance, stacking, clampTop, raiseSpeed, lowerSpeed, pullDistance, placement);
+                "NamePlateAPI CVar poll api=%d positioning=%d distance=%d stacking=%d patchApply=%d clampTop=%d raiseSpeed=%d lowerSpeed=%d pullMilli=%d placementMilli=%d",
+                apiEnabled, positioningEnabled, distance, stacking, patchApply, clampTop, raiseSpeed, lowerSpeed, pullDistance, placement);
             Log(line);
         }
     }
@@ -307,6 +315,93 @@ namespace {
                 InterlockedIncrement(const_cast<LONG*>(&NameplateRemovedCount));
                 return;
             }
+        }
+    }
+
+    int BuildStackingCalculationForPlate(void* targetPlate, float* offsetOut) {
+        if (offsetOut) *offsetOut = 0.0f;
+        if (!targetPlate) return 0;
+
+        struct PlateCalc {
+            void* plate;
+            float x;
+            float y;
+            float w;
+            float h;
+            float targetY;
+        };
+
+        PlateCalc plates[kMaxTrackedNameplates] = {};
+        int count = 0;
+        for (int i = 0; i < kMaxTrackedNameplates; ++i) {
+            NamePlateRecord& record = NameplateRecords[i];
+            if (!record.active || !record.plate) continue;
+            if (!IsReadable(record.plate, 0x300)) continue;
+            if (!ReadU32(record.plate, kFrameShownOffset, 0)) continue;
+
+            plates[count].plate = record.plate;
+            plates[count].x = ReadFloat(record.plate, kPlateNdcOffset, 0.0f);
+            plates[count].y = ReadFloat(record.plate, kPlateNdcOffset + sizeof(float), 0.0f);
+            plates[count].w = kDefaultNameplateWidth;
+            plates[count].h = kDefaultNameplateHeight;
+            plates[count].targetY = 0.0f;
+            ++count;
+        }
+
+        if (count <= 1) return count;
+
+        for (int i = 1; i < count; ++i) {
+            PlateCalc key = plates[i];
+            int j = i - 1;
+            while (j >= 0 && plates[j].y < key.y) {
+                plates[j + 1] = plates[j];
+                --j;
+            }
+            plates[j + 1] = key;
+        }
+
+        float bandX = static_cast<float>(InterlockedCompareExchange(const_cast<LONG*>(&NameplateBandXMilli), 0, 0)) / 1000.0f;
+        float bandY = static_cast<float>(InterlockedCompareExchange(const_cast<LONG*>(&NameplateBandYMilli), 0, 0)) / 1000.0f;
+        float raiseDistance = static_cast<float>(InterlockedCompareExchange(const_cast<LONG*>(&NameplateRaiseDistanceMilli), 0, 0)) / 1000.0f;
+
+        for (int i = 0; i < count; ++i) {
+            float maxRaise = plates[i].h * raiseDistance;
+            for (int j = 0; j < i; ++j) {
+                float minX = ((plates[i].w + plates[j].w) * 0.5f) * bandX;
+                float dx = plates[i].x - plates[j].x;
+                if (dx < 0.0f) dx = -dx;
+                if (dx > minX) continue;
+
+                float minY = ((plates[i].h + plates[j].h) * 0.5f) * bandY;
+                float requiredY = plates[j].y + plates[j].targetY + minY - plates[i].y;
+                if (requiredY > plates[i].targetY) {
+                    plates[i].targetY = requiredY;
+                }
+            }
+
+            if (plates[i].targetY > maxRaise) {
+                plates[i].targetY = maxRaise;
+            }
+
+            if (plates[i].plate == targetPlate) {
+                if (offsetOut) *offsetOut = plates[i].targetY;
+                return count;
+            }
+        }
+
+        return count;
+    }
+
+    void __stdcall AdjustNameplateSetPointY(void* plate, float* yValue) {
+        if (!yValue || !plate) return;
+        if (!InterlockedCompareExchange(const_cast<LONG*>(&NameplateApiEnabled), 0, 0)) return;
+        if (!InterlockedCompareExchange(const_cast<LONG*>(&NameplateStackingPatchApply), 0, 0)) return;
+        if (InterlockedCompareExchange(const_cast<LONG*>(&NameplateStackingMode), 0, 0) <= 0) return;
+
+        float offset = 0.0f;
+        BuildStackingCalculationForPlate(plate, &offset);
+        if (offset > 0.0f) {
+            *yValue += offset;
         }
     }
 
@@ -506,6 +601,22 @@ namespace {
         }
     }
 
+    void __declspec(naked) UpdateNamePlateSetPointArgsHook() {
+        __asm {
+            pushad
+            lea eax, [ebp - 8]
+            push eax
+            push ebx
+            call AdjustNameplateSetPointY
+            popad
+            fld dword ptr [ebp - 8]
+            push 1
+            sub esp, 8
+            push 0x00725904
+            ret
+        }
+    }
+
 }
 
 void InstallNameplateApiHooks() {
@@ -515,6 +626,13 @@ void InstallNameplateApiHooks() {
     if (InstallJumpHook("UpdateNamePlatePositions skip cleanup site", kUpdateNamePlatePositionsSite,
         updateSiteExpected, sizeof(updateSiteExpected),
         reinterpret_cast<void*>(&UpdateNamePlatePositionsSiteHook), &OriginalUpdateNamePlatePositionsSite)) {
+        InterlockedIncrement(const_cast<LONG*>(&NameplateHooksInstalled));
+    }
+
+    const BYTE setPointArgsExpected[] = { 0xD9, 0x45, 0xF8, 0x6A, 0x01, 0x83, 0xEC, 0x08 };
+    if (InstallJumpHook("UpdateNamePlatePositions SetPoint args site", kUpdateNamePlateSetPointArgsSite,
+        setPointArgsExpected, sizeof(setPointArgsExpected),
+        reinterpret_cast<void*>(&UpdateNamePlateSetPointArgsHook), &OriginalUpdateNamePlateSetPointArgsSite)) {
         InterlockedIncrement(const_cast<LONG*>(&NameplateHooksInstalled));
     }
 
