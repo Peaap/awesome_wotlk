@@ -20,7 +20,7 @@ namespace {
     constexpr uint32_t kTypeMaskAny = kTypeMaskObject | kTypeMaskItem | kTypeMaskContainer |
         kTypeMaskUnit | kTypeMaskPlayer | kTypeMaskGameObject | kTypeMaskDynamicObject | kTypeMaskCorpse;
 
-    volatile LONG Registered = 0;
+    DWORD LastRegisterTick = 0;
 
     void PushGuidString(void* luaState, guid_t guid) {
         if (!guid) {
@@ -109,9 +109,11 @@ namespace {
 }
 
 bool RegisterObjectTargetApi() {
-    if (InterlockedCompareExchange(const_cast<LONG*>(&Registered), 1, 0) != 0) {
+    DWORD now = GetTickCount();
+    if (LastRegisterTick != 0 && now - LastRegisterTick < 5000) {
         return true;
     }
+    LastRegisterTick = now;
 
     FrameScriptRegisterFunction("GML_GetPlayerGUID", &LuaGetPlayerGuid);
     FrameScriptRegisterFunction("GML_GetTargetGUID", &LuaGetTargetGuid);
