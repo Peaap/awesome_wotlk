@@ -2,7 +2,6 @@
 #include "NameplateApi.h"
 
 #include "Log.h"
-#include "ObjectTargetApi.h"
 #include "UnitApiLite.h"
 #include "X86Hook.h"
 
@@ -601,7 +600,6 @@ namespace {
 
     int __cdecl UpdateNamePlatePositionsHook(void* worldFrame) {
         InterlockedIncrement(const_cast<LONG*>(&NameplateUpdateCount));
-        RegisterObjectTargetApi();
         PollNameplateCVars();
         PollAddonBridge();
         int result = OriginalUpdateNamePlatePositions(worldFrame);
