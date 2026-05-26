@@ -1,5 +1,6 @@
 #include "AddonBridge.h"
 
+#include "GameClientLite.h"
 #include "Log.h"
 
 #include <stdint.h>
@@ -15,6 +16,15 @@ namespace {
     constexpr size_t kCVarValueOffset = 0x28;
     constexpr DWORD kPollIntervalMs = 100;
     constexpr int kMaxBridgeBytes = 255;
+    constexpr uint32_t kTypeMaskObject = 0x1;
+    constexpr uint32_t kTypeMaskItem = 0x2;
+    constexpr uint32_t kTypeMaskContainer = 0x4;
+    constexpr uint32_t kTypeMaskUnit = 0x8;
+    constexpr uint32_t kTypeMaskGameObject = 0x20;
+    constexpr uint32_t kTypeMaskDynamicObject = 0x40;
+    constexpr uint32_t kTypeMaskCorpse = 0x80;
+    constexpr uint32_t kTypeMaskAny = kTypeMaskObject | kTypeMaskItem | kTypeMaskContainer |
+        kTypeMaskUnit | TypeMaskPlayer | kTypeMaskGameObject | kTypeMaskDynamicObject | kTypeMaskCorpse;
 
     using CVarHandlerFn = int(__cdecl*)(void* cvar, const char* previousValue, const char* newValue, void* userData);
     using CVarGetFn = void* (__cdecl*)(const char* name);
@@ -86,6 +96,55 @@ namespace {
         return strcmp(left, right) == 0;
     }
 
+    void FormatGuid(char* output, size_t outputSize, guid_t guid) {
+        if (!guid) {
+            sprintf_s(output, outputSize, "nil");
+            return;
+        }
+
+        sprintf_s(output, outputSize, "%08X%08X",
+            static_cast<unsigned>(guid >> 32),
+            static_cast<unsigned>(guid & 0xFFFFFFFF));
+    }
+
+    bool TryParseGuid(const char* value, guid_t& guid) {
+        guid = 0;
+        if (!value || !value[0]) {
+            return false;
+        }
+
+        size_t length = strlen(value);
+        size_t offset = 0;
+        if (length > 2 && value[0] == '0' && (value[1] == 'x' || value[1] == 'X')) {
+            offset = 2;
+        }
+        if (length - offset == 0 || length - offset > 16) {
+            return false;
+        }
+
+        guid_t parsed = 0;
+        for (size_t i = offset; i < length; ++i) {
+            char c = value[i];
+            unsigned digit = 0;
+            if (c >= '0' && c <= '9') {
+                digit = static_cast<unsigned>(c - '0');
+            }
+            else if (c >= 'a' && c <= 'f') {
+                digit = static_cast<unsigned>(c - 'a' + 10);
+            }
+            else if (c >= 'A' && c <= 'F') {
+                digit = static_cast<unsigned>(c - 'A' + 10);
+            }
+            else {
+                return false;
+            }
+            parsed = (parsed << 4) | digit;
+        }
+
+        guid = parsed;
+        return guid != 0;
+    }
+
     void SetAck(int seq, const char* status, const char* payload) {
         sprintf_s(AckSeqBuffer, "%d", seq);
         sprintf_s(AckStatusBuffer, "%s", status ? status : "ok");
@@ -111,7 +170,7 @@ namespace {
         }
 
         if (Equals(safeCommand, "GML/status")) {
-            SetAck(seq, "ok", "core,nameplates,macro_conditionals,spell,addon_bridge");
+            SetAck(seq, "ok", "core,nameplates,macro_conditionals,spell,addon_bridge,object_target");
             return;
         }
 
@@ -122,6 +181,42 @@ namespace {
 
         if (Equals(safeCommand, "GML/macro-test")) {
             SetAck(seq, "ok", "macro-conditionals-active");
+            return;
+        }
+
+        if (Equals(safeCommand, "GML/object/player")) {
+            char guid[32];
+            FormatGuid(guid, sizeof(guid), GetPlayerGuid());
+            SetAck(seq, "ok", guid);
+            return;
+        }
+
+        if (Equals(safeCommand, "GML/object/target")) {
+            char guid[32];
+            FormatGuid(guid, sizeof(guid), GetGuidByKeyword("target"));
+            SetAck(seq, "ok", guid);
+            return;
+        }
+
+        if (Equals(safeCommand, "GML/object/mouseover")) {
+            guid_t guidValue = 0;
+            char guid[32];
+            if (!GetMouseoverGuid(&guidValue)) {
+                guidValue = 0;
+            }
+            FormatGuid(guid, sizeof(guid), guidValue);
+            SetAck(seq, "ok", guid);
+            return;
+        }
+
+        if (Equals(safeCommand, "GML/object/exists")) {
+            guid_t guid = 0;
+            if (!TryParseGuid(safePayload, guid)) {
+                SetAck(seq, "rejected", "invalid-guid");
+                return;
+            }
+
+            SetAck(seq, "ok", ObjectMgrGet(guid, kTypeMaskAny) ? "1" : "0");
             return;
         }
 

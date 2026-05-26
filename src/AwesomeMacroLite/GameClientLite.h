@@ -31,6 +31,8 @@ namespace AwesomeMacroLite {
         constexpr uintptr_t LuaPushLString = 0x0084E300;
         constexpr uintptr_t LuaPushNil = 0x0084E280;
         constexpr uintptr_t GetPlayerGuid = 0x004D3790;
+        constexpr uintptr_t GetGuidByKeyword = 0x0060C1C0;
+        constexpr uintptr_t GetMouseoverGuid = 0x00512A30;
         constexpr uintptr_t ObjectMgrGet = 0x004D4DB0;
         constexpr uintptr_t HandleTerrainClick = 0x00527830;
         constexpr uintptr_t SpellOnCast = 0x0080DA40;
@@ -48,6 +50,8 @@ namespace AwesomeMacroLite {
     using LuaPushLStringFn = void(__cdecl*)(void* luaState, const char* value, size_t length);
     using LuaPushNilFn = void(__cdecl*)(void* luaState);
     using GetPlayerGuidFn = guid_t(__cdecl*)();
+    using GetGuidByKeywordFn = guid_t(__cdecl*)(const char* keyword);
+    using GetMouseoverGuidFn = bool(__cdecl*)(guid_t* guid);
     using ObjectMgrGetFn = CGObjectLite* (__cdecl*)(guid_t guid, uint32_t typeMask);
     using HandleTerrainClickFn = void(__cdecl*)(TerrainClickEvent* event);
     using ObjectGetPositionFn = C3Vector&(__thiscall*)(CGObjectLite* object, C3Vector& pos);
@@ -59,6 +63,8 @@ namespace AwesomeMacroLite {
     inline auto LuaPushLString = reinterpret_cast<LuaPushLStringFn>(Addresses::LuaPushLString);
     inline auto LuaPushNil = reinterpret_cast<LuaPushNilFn>(Addresses::LuaPushNil);
     inline auto GetPlayerGuid = reinterpret_cast<GetPlayerGuidFn>(Addresses::GetPlayerGuid);
+    inline auto GetGuidByKeyword = reinterpret_cast<GetGuidByKeywordFn>(Addresses::GetGuidByKeyword);
+    inline auto GetMouseoverGuid = reinterpret_cast<GetMouseoverGuidFn>(Addresses::GetMouseoverGuid);
     inline auto ObjectMgrGet = reinterpret_cast<ObjectMgrGetFn>(Addresses::ObjectMgrGet);
     inline auto HandleTerrainClick = reinterpret_cast<HandleTerrainClickFn>(Addresses::HandleTerrainClick);
 }
