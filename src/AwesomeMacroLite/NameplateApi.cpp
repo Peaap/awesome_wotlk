@@ -19,6 +19,7 @@ namespace {
     constexpr uintptr_t kHideNamePlate = 0x00725840;
     constexpr uintptr_t kUpdateNamePlatePositions = 0x00725890;
     constexpr uintptr_t kUpdateNamePlatePositionsSite = 0x004F90E2;
+    constexpr uintptr_t kUpdateNamePlatePositionsSiteJumpBack = 0x004F90EC;
     constexpr uintptr_t kNamePlateDistanceSquared = 0x00ADAA7C;
     constexpr uintptr_t kWorldFrameGlobal = 0x00B7436C;
     constexpr size_t kWorldFrameRenderDirtyFlagsOffset = 0xB10;
@@ -48,6 +49,7 @@ namespace {
     NamePlateInitializeFn OriginalNamePlateInitialize = nullptr;
     HideNamePlateFn OriginalHideNamePlate = nullptr;
     UpdateNamePlatePositionsFn OriginalUpdateNamePlatePositions = nullptr;
+    void* OriginalUpdateNamePlatePositionsSite = nullptr;
 
     void* CVarNameplateApi = nullptr;
     void* CVarNameplatePositioning = nullptr;
@@ -367,10 +369,24 @@ namespace {
         return result;
     }
 
+    void __declspec(naked) UpdateNamePlatePositionsSiteHook() {
+        __asm {
+            push 0x004F90EC
+            ret
+        }
+    }
+
 }
 
 void InstallNameplateApiHooks() {
     ProbeStackingSite();
+
+    const BYTE updateSiteExpected[] = { 0x83, 0xC4, 0x08, 0x83, 0xA6, 0x10, 0x0B, 0x00, 0x00, 0xFE };
+    if (InstallJumpHook("UpdateNamePlatePositions skip cleanup site", kUpdateNamePlatePositionsSite,
+        updateSiteExpected, sizeof(updateSiteExpected),
+        reinterpret_cast<void*>(&UpdateNamePlatePositionsSiteHook), &OriginalUpdateNamePlatePositionsSite)) {
+        InterlockedIncrement(const_cast<LONG*>(&NameplateHooksInstalled));
+    }
 
     const BYTE cvarInitializeExpected[] = { 0xC6, 0x05, 0xFA, 0x19, 0xCA, 0x00, 0x01, 0xC3 };
     if (InstallJumpHook("CVar::Initialize", kCVarInitialize, cvarInitializeExpected, sizeof(cvarInitializeExpected),
