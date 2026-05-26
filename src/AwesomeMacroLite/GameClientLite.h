@@ -33,6 +33,7 @@ namespace AwesomeMacroLite {
         constexpr uintptr_t GetPlayerGuid = 0x004D3790;
         constexpr uintptr_t ObjectMgrGet = 0x004D4DB0;
         constexpr uintptr_t HandleTerrainClick = 0x00527830;
+        constexpr uintptr_t SpellOnCast = 0x0080DA40;
     }
 
     constexpr int LuaStringType = 4;

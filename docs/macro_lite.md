@@ -44,6 +44,7 @@ a short timeout, so a canceled/failed cast cannot leave a stale target active.
 - `GameClientLite.h`: minimal Grimfall/WotLK addresses and client structs.
 - `MacroParser.cpp`: `SecureCmdOptionParse` rewrite for macro targets.
 - `MacroTargetState.cpp`: armed `cursor` / `playerlocation` state and timeout cleanup.
+- `SpellStanceFix.cpp`: SlimDetours-backed stance/form byte update after successful form casts.
 - `TerrainTargeting.cpp`: terrain submit hook for ground-target casts.
 
 ## What It Avoids
@@ -58,8 +59,8 @@ MacroLite intentionally does not include:
 - addon communication bridge hooks
 - full miscellaneous interaction hooks
 
-The current stable macro DLL imports only `KERNEL32.dll`. Future hooks that
-actually use the SlimDetours backend may add `ntdll.dll`.
+The current macro DLL imports only `KERNEL32.dll` and `ntdll.dll`. The
+`ntdll.dll` import comes from the SlimDetours-backed spell hook.
 
 ## Build
 
@@ -104,6 +105,8 @@ SecureCmdOptionParse manual hook installed ...
 OnLayerTrackTerrain manual hook installed ...
 SecureCmdOptionParseHook rewriting target ...
 OnLayerTrackTerrainHook cursor click ...
+SpellOnCast SlimDetours hook installed ...
+SpellOnCastHook applied ...
 Macro target flags cleared reason=cursor-click ...
 ```
 

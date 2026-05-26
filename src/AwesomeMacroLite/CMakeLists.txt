@@ -6,6 +6,7 @@ add_library(${PROJECT_NAME} SHARED
     "MacroParser.cpp"
     "MacroTargetState.cpp"
     "SlimHook.cpp"
+    "SpellStanceFix.cpp"
     "TerrainTargeting.cpp"
     "X86Hook.cpp"
 )

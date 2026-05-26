@@ -61,3 +61,7 @@ SlimDetours `v1.2.1-beta` is vendored under `deps/KNSoft.SlimDetours` with the
 matching KNSoft.NDK `1.2.50-beta` headers under `deps/KNSoft.NDK` for new
 or reverified hooks that need relocated trampolines, such as functions whose
 first bytes include relative `call` or `jmp` instructions.
+
+The first SlimDetours-backed MacroLite hook is the Grimfall stance/form fix at
+`SpellOnCast`, used to keep stance/form macro chains responsive after a
+successful form cast.
