@@ -35,6 +35,16 @@ The terrain hook then submits the ground-target position:
 Armed macro-target flags are cleared after a successful terrain click or after
 a short timeout, so a canceled/failed cast cannot leave a stale target active.
 
+## Module Layout
+
+- `Entry.cpp`: DLL startup and hook initialization order.
+- `Log.cpp`: runtime log path resolution and file logging.
+- `X86Hook.cpp`: expected-byte checks, trampoline allocation, and jump patching.
+- `GameClientLite.h`: minimal Grimfall/WotLK addresses and client structs.
+- `MacroParser.cpp`: `SecureCmdOptionParse` rewrite for macro targets.
+- `MacroTargetState.cpp`: armed `cursor` / `playerlocation` state and timeout cleanup.
+- `TerrainTargeting.cpp`: terrain submit hook for ground-target casts.
+
 ## What It Avoids
 
 MacroLite intentionally does not include:

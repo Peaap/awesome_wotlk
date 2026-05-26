@@ -42,3 +42,10 @@ This fork should stay source-readable:
 - full Awesome WotLK library kept separate until each module is reverified
 
 More detail is in `TRUST.md` and `docs/macro_lite.md`.
+
+## Source Layout
+
+The Grimfall-specific MacroLite target is split into small reviewable modules
+under `src/AwesomeMacroLite` instead of one large source file. Each feature
+area owns its own hook, state, or utility code so future ports can stay
+isolated.
