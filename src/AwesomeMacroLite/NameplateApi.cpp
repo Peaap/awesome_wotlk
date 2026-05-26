@@ -82,6 +82,7 @@ namespace {
     volatile LONG NameplateRemovedCount = 0;
     volatile LONG NameplateUpdateCount = 0;
     volatile LONG NameplateHooksInstalled = 0;
+    volatile LONG NameplateCVarsRegistered = 0;
     NamePlateRecord NameplateRecords[kMaxTrackedNameplates] = {};
     DWORD LastStatusLogTick = 0;
 
@@ -126,7 +127,11 @@ namespace {
         return cvar;
     }
 
-    void RegisterNameplateCVars() {
+    bool RegisterNameplateCVars(const char* reason) {
+        if (InterlockedCompareExchange(const_cast<LONG*>(&NameplateCVarsRegistered), 1, 0) != 0) {
+            return true;
+        }
+
         CVarNameplateApi = RegisterNameplateCVar("grimfallNameplateApi", "1");
         CVarNameplatePositioning = RegisterNameplateCVar("grimfallNameplatePositioning", "0");
         CVarNameplateStacking = RegisterNameplateCVar("grimfallNameplateStacking", "0");
@@ -152,6 +157,17 @@ namespace {
         CVarNameplateAlphaSpeed = RegisterNameplateCVar("grimfallNameplateAlphaSpeed", "0.25");
         CVarNameplateInertia = RegisterNameplateCVar("grimfallNameplateInertia", "1.0");
         CVarNameplateHysteresisDecay = RegisterNameplateCVar("grimfallNameplateHysteresisDecay", "1.0");
+
+        if (!CVarNameplateApi || !CVarNameplateDistance) {
+            InterlockedExchange(const_cast<LONG*>(&NameplateCVarsRegistered), 0);
+            Log("NamePlateAPI CVar registration failed: critical CVar unavailable");
+            return false;
+        }
+
+        char line[160];
+        sprintf_s(line, "NamePlateAPI CVar registration completed reason=%s", reason ? reason : "unknown");
+        Log(line);
+        return true;
     }
 
     void DirtyWorldFrame() {
@@ -268,9 +284,9 @@ namespace {
 
     void __cdecl CVarInitializeHook() {
         OriginalCVarInitialize();
-        RegisterNameplateCVars();
-        PollNameplateCVars(true);
-        Log("NamePlateAPI CVar registration completed");
+        if (RegisterNameplateCVars("CVarInitialize")) {
+            PollNameplateCVars(true);
+        }
     }
 
     int __fastcall NamePlateInitializeHook(void* plate, void*, void* unit) {
@@ -351,6 +367,10 @@ void InstallNameplateApiHooks() {
     if (InstallJumpHook("HideNamePlate", kHideNamePlate, hideExpected, sizeof(hideExpected),
         reinterpret_cast<void*>(&HideNamePlateHook), reinterpret_cast<void**>(&OriginalHideNamePlate))) {
         InterlockedIncrement(const_cast<LONG*>(&NameplateHooksInstalled));
+    }
+
+    if (RegisterNameplateCVars("fallback")) {
+        PollNameplateCVars(true);
     }
 }
 }
