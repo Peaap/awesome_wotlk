@@ -18,6 +18,7 @@ namespace {
     constexpr uintptr_t kNamePlateInitialize = 0x0098F390;
     constexpr uintptr_t kHideNamePlate = 0x00725840;
     constexpr uintptr_t kUpdateNamePlatePositions = 0x00725890;
+    constexpr uintptr_t kUpdateNamePlatePositionsSite = 0x004F90E2;
     constexpr uintptr_t kNamePlateDistanceSquared = 0x00ADAA7C;
     constexpr uintptr_t kWorldFrameGlobal = 0x00B7436C;
     constexpr size_t kWorldFrameRenderDirtyFlagsOffset = 0xB10;
@@ -282,6 +283,30 @@ namespace {
         Log(line);
     }
 
+    void ProbeStackingSite() {
+        const BYTE expected[] = { 0x83, 0xC4, 0x08, 0x83, 0xA6, 0x10, 0x0B, 0x00, 0x00, 0xFE };
+        const auto* actual = reinterpret_cast<const BYTE*>(kUpdateNamePlatePositionsSite);
+        char bytes[64] = {};
+        char* cursor = bytes;
+        size_t remaining = sizeof(bytes);
+
+        for (size_t i = 0; i < sizeof(expected); ++i) {
+            int written = sprintf_s(cursor, remaining, "%s%02X", i ? " " : "", actual[i]);
+            if (written <= 0 || static_cast<size_t>(written) >= remaining) {
+                break;
+            }
+            cursor += written;
+            remaining -= static_cast<size_t>(written);
+        }
+
+        char line[192];
+        sprintf_s(line, "NamePlateAPI stacking site probe addr=0x%08X match=%d bytes=%s",
+            static_cast<unsigned>(kUpdateNamePlatePositionsSite),
+            memcmp(actual, expected, sizeof(expected)) == 0 ? 1 : 0,
+            bytes);
+        Log(line);
+    }
+
     void __cdecl CVarInitializeHook() {
         OriginalCVarInitialize();
         if (RegisterNameplateCVars("CVarInitialize")) {
@@ -345,6 +370,8 @@ namespace {
 }
 
 void InstallNameplateApiHooks() {
+    ProbeStackingSite();
+
     const BYTE cvarInitializeExpected[] = { 0xC6, 0x05, 0xFA, 0x19, 0xCA, 0x00, 0x01, 0xC3 };
     if (InstallJumpHook("CVar::Initialize", kCVarInitialize, cvarInitializeExpected, sizeof(cvarInitializeExpected),
         reinterpret_cast<void*>(&CVarInitializeHook), reinterpret_cast<void**>(&OriginalCVarInitialize))) {
