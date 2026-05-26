@@ -24,16 +24,39 @@ jobs:
 
           New-Item -ItemType Directory -Force -Path "$staging\Interface\AddOns" | Out-Null
 
-          Copy-Item "${{ github.workspace }}\addons\AwesomeCVar" "$staging\Interface\AddOns\AwesomeCVar" -Recurse
-          Copy-Item "${{ github.workspace }}\addons\Flash" "$staging\Interface\AddOns\Flash" -Recurse
+          Copy-Item "${{ github.workspace }}\addons\GrimfallMacroLite" "$staging\Interface\AddOns\GrimfallMacroLite" -Recurse
 
-          Copy-Item "${{ github.workspace }}\build\Release\AwesomeWotlkPatch.exe" "$staging\"
-          Copy-Item "${{ github.workspace }}\build\Release\AwesomeWotlkLib.dll" "$staging\"
-          Copy-Item "${{ github.workspace }}\deps\skia\skia.dll" "$staging\"
+          Copy-Item "${{ github.workspace }}\build\Release\AwesomeMacroLite.dll" "$staging\"
+          Copy-Item "${{ github.workspace }}\build\Release\GrimfallWotlkPatch.exe" "$staging\"
 
-          Compress-Archive -Path "$staging\*" -DestinationPath "${{ github.workspace }}\AwesomeWotLK_$tag.zip" -Force
+          @(
+            "Grimfall MacroLite $tag",
+            "",
+            "Install:",
+            "1. Close WoW.",
+            "2. Copy AwesomeMacroLite.dll and GrimfallWotlkPatch.exe beside Wow.exe.",
+            "3. Copy Interface\AddOns\GrimfallMacroLite into your WoW Interface\AddOns folder.",
+            "4. Run GrimfallWotlkPatch.exe as administrator from the same folder as Wow.exe.",
+            "5. Launch WoW and use /gml.",
+            "",
+            "Notes:",
+            "- Built for Grimfall WoW, not a stock WotLK client.",
+            "- Object/Target API reads are exposed through the addon bridge for stability."
+          ) | Set-Content -Path "$staging\README.txt" -Encoding ASCII
+
+          $hashLines = Get-ChildItem -Path $staging -Recurse -File |
+            Where-Object { $_.Name -ne "SHA256SUMS.txt" } |
+            Sort-Object FullName |
+            ForEach-Object {
+              $hash = (Get-FileHash -Algorithm SHA256 -Path $_.FullName).Hash.ToLowerInvariant()
+              $relative = $_.FullName.Substring($staging.Length + 1)
+              "$hash  $relative"
+            }
+          $hashLines | Set-Content -Path "$staging\SHA256SUMS.txt" -Encoding ASCII
+
+          Compress-Archive -Path "$staging\*" -DestinationPath "${{ github.workspace }}\GrimfallMacroLite_$tag.zip" -Force
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
           name: win32-release
-          path: AwesomeWotLK_*.zip
+          path: GrimfallMacroLite_*.zip
